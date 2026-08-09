@@ -18,6 +18,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -35,6 +36,7 @@ import {
   VENUE_ID_UNSET,
   VENUE_RETIRED,
   VENUE_SLOTS,
+  venueIdFromName,
 } from "../dist/esm/index.js";
 
 /** Render an IDL type node the way ACCOUNT_LAYOUTS spells it. */
@@ -313,4 +315,69 @@ test("the venue contract the SDK compiled in matches the one the program publish
   // bit index == venue id, so bit 0 can never be set in the mask.
   assert.equal(VENUE_FLAGS_MASK & 1, 0, "bit 0 is permanently unused");
   assert.equal(VENUE_FLAGS_DEFAULT & 1, 0);
+});
+
+test("the venue table matches the program's own Rust constants", (t) => {
+  // venues.json is generated; state.rs is what runs through require!. When the
+  // two disagree the Rust wins, so the reference for this comparison is the Rust
+  // source, read directly. It only exists in the monorepo -- the public SDK
+  // repository ships without packages/anchor-program -- so absence is reported
+  // rather than silently passed, and POYZ_REQUIRE_RUST_SOURCE=1 makes it fatal.
+  const statePath = new URL("../../anchor-program/programs/poyz/src/state.rs", import.meta.url);
+  let rust = null;
+  try {
+    rust = readFileSync(statePath, "utf8");
+  } catch (error) {
+    const detail = `state.rs not readable (${error.code ?? error.message})`;
+    if (process.env.POYZ_REQUIRE_RUST_SOURCE === "1") {
+      assert.fail(`${detail}. POYZ_REQUIRE_RUST_SOURCE=1 demands the comparison.`);
+    }
+    t.diagnostic(`SKIPPED state.rs comparison: ${detail}. The generated contract was still checked.`);
+    return;
+  }
+
+  const constant = (name) => {
+    const match = rust.match(new RegExp(`pub const ${name}: u8 = (\\d+);`));
+    assert.ok(match !== null, `state.rs no longer defines ${name}`);
+    return Number(match[1]);
+  };
+
+  const expected = {
+    none: constant("VENUE_NONE"),
+    velocity: constant("VENUE_VELOCITY"),
+    "jupiter-perps": constant("VENUE_JUPITER_PERPS"),
+    adrena: constant("VENUE_ADRENA"),
+    "flash-trade": constant("VENUE_FLASH_TRADE"),
+    simulated: constant("VENUE_SIMULATED"),
+  };
+
+  for (const [name, slot] of Object.entries(expected)) {
+    assert.equal(VENUE_SLOTS[name], slot, `${name} must be slot ${slot}, as state.rs defines it`);
+  }
+  assert.equal(VENUE_ID_UNSET, expected.none, "the unset sentinel must be the program's VENUE_NONE");
+  assert.equal(VENUE_ID_BASE, expected.velocity, "assignable ids must start where the program starts them");
+  assert.equal(VENUE_ID_MAX_ASSIGNABLE, constant("VENUE_FLASH_TRADE"));
+
+  // VENUE_FLAGS_MASK is a const fn over the ids, so recompute it the same way
+  // rather than parsing an expression: bit n enables id n, bit 0 unused.
+  let mask = 0;
+  for (const slot of [expected.velocity, expected["jupiter-perps"], expected.adrena, expected["flash-trade"]]) {
+    mask |= 1 << slot;
+  }
+  assert.equal(VENUE_FLAGS_MASK, mask, "the flags mask must be the bits the program assigns");
+  assert.equal(mask & 1, 0, "bit 0 is permanently unused because id 0 is not a venue");
+
+  t.diagnostic(`compared against ${statePath.pathname}`);
+});
+
+test("an unmapped venue name falls to the unset slot, never to a real venue", () => {
+  // Every package in this system resolves an unknown string to 0. A typo or a
+  // wound-down venue that picked up a plausible id would be attributed to a real
+  // venue in a committed proof, which is the failure the 1-based numbering and
+  // this rule exist to prevent.
+  for (const name of ["zeta", "mango-v4", "mango", "drfit", "", "velocityy", "VENUE_1"]) {
+    assert.equal(venueIdFromName(name), VENUE_ID_UNSET, `"${name}" must resolve to the unset slot`);
+  }
+  assert.equal(venueIdFromName("velocity"), VENUE_SLOTS.velocity);
+  assert.equal(venueIdFromName("drift"), VENUE_SLOTS.velocity, "the rename alias is the same venue");
 });

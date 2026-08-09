@@ -98,24 +98,42 @@ export function venueName(venueId: number): string {
 /**
  * Resolve a venue name to its slot.
  *
- * Accepts the rename alias published in the venue contract, because the halves
- * of this system normalise the primary venue's name differently and a mismatch
- * there is not caught by the type checker -- it fails at runtime, on every proof
- * commit, against the primary venue.
+ * An unrecognised name -- a typo, a venue that wound down, anything not in the
+ * contract -- resolves to {@link VENUE_ID_UNSET}, which is 0. That is
+ * deliberate and it is the same behaviour every other package in this system
+ * has: 0 is not a venue, the program rejects it, and so a name nobody
+ * registered can never be attributed to a real venue. The alternative, picking
+ * the nearest plausible id, is the exact bug the 1-based numbering exists to
+ * prevent.
  *
- * @throws PoyzConfigError for a retired venue, with why it was retired, and for
- *   a name with no slot.
+ * Use {@link requireVenueId} where a name came from a human and a typo should
+ * be reported at the point of entry rather than deferred to the instruction.
  */
 export function venueIdFromName(name: string): number {
+  return VENUE_IDS[name.trim().toLowerCase()] ?? VENUE_ID_UNSET;
+}
+
+/**
+ * Resolve a venue name, refusing anything the contract does not list.
+ *
+ * The strict counterpart of {@link venueIdFromName}, for input a person typed:
+ * a misspelled venue is worth saying out loud at the flag rather than surfacing
+ * later as "venue id 0 is the unset value".
+ *
+ * @throws PoyzConfigError for a retired venue, with why it was retired, and for
+ *   a name the contract does not carry.
+ */
+export function requireVenueId(name: string): number {
   const key = name.trim().toLowerCase();
   const retired = RETIRED_VENUES[key];
   if (retired !== undefined) {
     throw new PoyzConfigError(`${name} is not a hedge venue: ${retired}`);
   }
   const id = VENUE_IDS[key];
-  if (id === undefined) {
+  if (id === undefined || id === VENUE_ID_UNSET) {
     throw new PoyzConfigError(
       `unknown hedge venue "${name}". Known venues: ${Object.entries(VENUE_IDS)
+        .filter(([, slot]) => slot !== VENUE_ID_UNSET)
         .map(([venue, slot]) => `${slot}=${venue}`)
         .join(", ")}`,
     );

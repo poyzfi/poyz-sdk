@@ -13,9 +13,9 @@ import { timeToYieldWipeout, type YieldWipeoutInput } from "./wipeout.js";
  *   daysToStakerYieldZero  = 0 accrued / 30,000            = 0 days
  *   daysToBufferDepletion  = 1,700,000 / 30,000            = 56.666... days
  *
- * Only the annualized line moved when the basis changed from 8760 to the 8766
- * that _DIRECTION.md 8-1 fixes; -10.95%/yr is the 365-day reading of the same
- * rate. The daily and runway lines have no year length in them.
+ * Only the annualized line moved when the basis changed from 365 days to the
+ * 365.25 that _DIRECTION.md 8-1 fixes; -10.95%/yr is the 365-day reading of the
+ * same rate. The daily and runway lines have no year length in them.
  *
  * The two events are different. Staker carry reaches zero immediately, because
  * there is no accrued cushion; the buffer keeps the backing whole for another

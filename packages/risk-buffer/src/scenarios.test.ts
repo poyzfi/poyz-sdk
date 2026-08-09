@@ -17,11 +17,14 @@ import {
 import { HOURS_PER_YEAR_JULIAN, dailyToAnnualRate } from "./units.js";
 
 /**
- * The published risk-spec 1.4 table, transcribed by hand from the document so
- * the test compares the code against the spec rather than against itself.
+ * The published risk-spec 1.3 stress table, transcribed by hand from the
+ * document so the test compares the code against the spec rather than against
+ * itself.
  *
  * Rows are buffer size b, columns are daily funding cost f_d. Values are days,
- * to one decimal, computed as b / f_d.
+ * to one decimal, computed as b / f_d. **None of these cells moved when the
+ * annualization basis changed from 365 to 365.25 days**, because b / f_d has no
+ * year length in it. That invariance is the point of this block.
  */
 const RISK_SPEC_TABLE: ReadonlyArray<{
   readonly bufferScenarioId: string;
@@ -78,7 +81,7 @@ const RISK_SPEC_TABLE: ReadonlyArray<{
   },
 ];
 
-describe("risk-spec 1.4 stress table is reproduced exactly", () => {
+describe("risk-spec 1.3 stress table is reproduced exactly", () => {
   it("has one cell per buffer size and funding scenario", () => {
     expect(BUFFER_SIZE_SCENARIOS).toHaveLength(4);
     expect(FUNDING_STRESS_SCENARIOS).toHaveLength(5);

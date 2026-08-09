@@ -17,6 +17,7 @@ import {
   keeperUnbondCommand,
 } from "./commands/keeper.js";
 import { mintCancelCommand, mintCommand, redeemCancelCommand, redeemCommand } from "./commands/requests.js";
+import { venueListCommand, venueReportCommand } from "./commands/venue.js";
 import {
   claimCommand,
   stakeCommand,
@@ -51,6 +52,8 @@ export const COMMANDS: readonly CommandSpec[] = [
   keeperRegisterCommand,
   keeperBondCommand,
   keeperUnbondCommand,
+  venueListCommand,
+  venueReportCommand,
   simulateCommand,
 ];
 

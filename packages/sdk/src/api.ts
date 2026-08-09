@@ -284,15 +284,12 @@ function mapVenue(venue: Json): VenueExposureView {
     carryDirection,
   );
 
+  // The slot comes from the venue NAME through the program's own contract, never
+  // from a numeric id in the response. A backend on a different numbering would
+  // otherwise shift every slot, and slot numbers are what proofs are committed
+  // against. An unmapped name resolves to 0, which is not a venue.
   const name = str(venue, "venue") ?? "unknown";
-  let venueId: number | null = null;
-  try {
-    venueId = venueIdFromName(name);
-  } catch {
-    // A venue the SDK has no slot for is still reported; it just cannot be
-    // referenced in an on-chain proof.
-    venueId = null;
-  }
+  const venueId = venueIdFromName(name);
 
   return {
     venue: name,

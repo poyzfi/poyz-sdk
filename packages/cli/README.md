@@ -73,6 +73,8 @@ Node 20 or newer. The only runtime dependency is `@solana/web3.js`; the POYZ SDK
 | `poyz keeper register` | Register as a Delta Keeper and post the opening bond |
 | `poyz keeper bond` | Add to an existing keeper bond |
 | `poyz keeper unbond` | Withdraw from a keeper bond after the cooldown |
+| `poyz venue list` | Hedge venue slots, which are enabled, and how fresh the last reading is |
+| `poyz venue report` | Report a venue's net carry and capacity. Protocol authority only |
 | `poyz simulate` | Project funding over a horizon, including the negative regime |
 
 `poyz <command> --help` prints the flags and the caveats for one command.
@@ -121,6 +123,27 @@ poyz unstake 100 --keypair ./keys/poyz.json --execute      # starts the cooldown
 poyz unstake withdraw --keypair ./keys/poyz.json --execute # after it elapses
 poyz claim --keypair ./keys/poyz.json --execute            # funding already settled to you
 ```
+
+### Venue state is a feed, and issuance is fail-closed on it
+
+The protocol will not mint while it has no current reading of the hedge venue. `report_venue_state`
+carries the venue's net carry and its available capacity, and mint requests are rejected while that
+reading is missing, older than the configured maximum age, or short of the capacity the supply would
+need. It is a recurring feed, not a setting: **stop sending it and minting stops.**
+
+```bash
+poyz venue list                                                  # slots, flags, and how stale the reading is
+poyz venue report --venue velocity --net-carry-bps -1750 \
+  --capacity 7646000000 --keypair ./keys/authority.json --execute
+```
+
+`venue report` is signed by the **protocol authority**, not by a keeper, which is why it is not under
+`poyz keeper`. Net carry is signed: a venue that charges reports a negative number.
+
+Venue slots are 1-based. Slot 0 is the unset `u8` value and the program rejects it, so a `venue_id`
+that was never written cannot be mistaken for the primary venue. `velocity` is slot 1 and `drift`
+resolves to the same slot, because that is the same venue before its rebrand. Zeta and Mango v4 no
+longer operate and are refused by name with the reason.
 
 ---
 

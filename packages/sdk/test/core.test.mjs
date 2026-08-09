@@ -49,6 +49,7 @@ import {
   isVenueEnabled,
   toHex,
   u64Seed,
+  requireVenueId,
   venueIdFromName,
   venueName,
 } from "../dist/esm/index.js";
@@ -430,17 +431,23 @@ test("every published alias resolves to the same slot as its canonical name", ()
   assert.equal(venueIdFromName("Drift"), venueIdFromName(" VELOCITY "), "matching is case and space insensitive");
 });
 
-test("a retired venue is refused with the contract's own reason", () => {
+test("a retired venue resolves to the unset slot, and requireVenueId says why", () => {
   assert.ok(Object.keys(VENUE_RETIRED).length > 0, "the contract lists retired venues");
   for (const [name, reason] of Object.entries(VENUE_RETIRED)) {
+    // The lenient path is what other packages use, and it must never hand a
+    // retired name a real slot.
+    assert.equal(venueIdFromName(name), VENUE_ID_UNSET, `${name} must fall to the unset slot`);
+    // The strict path is for input a person typed, and it explains itself.
     assert.throws(
-      () => venueIdFromName(name),
+      () => requireVenueId(name),
       (error) => error.message.includes(reason),
       `${name} must be refused with the published reason`,
     );
     assert.equal(Object.values(VENUE_NAMES).includes(name), false, `${name} must have no slot`);
   }
-  assert.throws(() => venueIdFromName("nonesuch"), /unknown hedge venue/);
+  assert.equal(venueIdFromName("nonesuch"), VENUE_ID_UNSET);
+  assert.throws(() => requireVenueId("nonesuch"), /unknown hedge venue/);
+  assert.throws(() => requireVenueId("none"), /unknown hedge venue/, "the unset slot is not selectable");
 });
 
 test("venue_flags bit index is the venue id, and bit 0 is never a venue", () => {

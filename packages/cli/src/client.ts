@@ -26,6 +26,7 @@ import type {
   ReadOptions,
   RedeemCancelParams,
   RedeemRequestParams,
+  ReportVenueStateParams,
   RequestUnstakeParams,
   RedeemRequestView,
   SendResult,
@@ -64,6 +65,7 @@ export interface PoyzClientLike {
   buildKeeperRegister(params: KeeperRegisterParams): Promise<PoyzTransactionPlan>;
   buildKeeperBond(params: KeeperBondParams): Promise<PoyzTransactionPlan>;
   buildKeeperUnbond(params: KeeperUnbondParams): Promise<PoyzTransactionPlan>;
+  buildReportVenueState(params: ReportVenueStateParams): Promise<PoyzTransactionPlan>;
 
   // sends
   mintRequest(params: Signed<MintRequestParams>): Promise<SendResult>;
@@ -77,6 +79,7 @@ export interface PoyzClientLike {
   keeperRegister(params: Signed<KeeperRegisterParams>): Promise<SendResult>;
   keeperBond(params: Signed<KeeperBondParams>): Promise<SendResult>;
   keeperUnbond(params: Signed<KeeperUnbondParams>): Promise<SendResult>;
+  reportVenueState(params: Signed<ReportVenueStateParams>): Promise<SendResult>;
 
   simulate(plan: PoyzTransactionPlan): Promise<SimulationResult>;
 }

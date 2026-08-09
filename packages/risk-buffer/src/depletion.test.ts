@@ -23,9 +23,9 @@ import { MS_PER_DAY, perEightHourToHourlyRate } from "./units.js";
  *   runway (days)    = 1,700,000 / 30,000               = 56.666...
  *   equivalently     = b / f_d = 0.017 / 0.0003         = 56.666...
  *
- * Note which lines moved when the annualization basis changed from 8760 to the
- * 8766 that _DIRECTION.md 8-1 fixes: only the annualized line. -10.95%/yr is
- * the 365-day reading of the same rate and is what earlier risk-spec drafts
+ * Note which lines moved when the annualization basis changed from 365 days to
+ * the 365.25 that _DIRECTION.md 8-1 fixes: only the annualized line. -10.95%/yr
+ * is the 365-day reading of the same rate and is what earlier risk-spec drafts
  * printed in section 1.3. The daily cost and the runway are daily-basis
  * divisions with no year length in them, so 56.7 days is unchanged.
  */
@@ -48,10 +48,13 @@ describe("estimateBufferDepletion under a negative funding regime", () => {
     const estimate = estimateBufferDepletion(NEGATIVE_FUNDING_CASE);
     expect(estimate.annualizedFundingRate).toBeCloseTo(-0.109575, 10);
     // The 365-day reading of the same rate, for the reader comparing against an
-    // earlier risk-spec draft.
-    expect((estimate.annualizedFundingRate ?? 0) / 8766).toBeCloseTo(-0.1095 / 8760, 14);
+    // earlier risk-spec draft: both divide back to the same hourly rate.
+    expect((estimate.annualizedFundingRate ?? 0) / (24 * 365.25)).toBeCloseTo(
+      -0.1095 / (24 * 365),
+      14,
+    );
     // -3.65%/yr is the 8h-read-as-a-day error and stays excluded under either
-    // year length. The 8760 -> 8766 change is not a reason to drop this.
+    // year length. The change of basis is not a reason to drop this.
     expect(estimate.annualizedFundingRate ?? 0).not.toBeCloseTo(-0.0365, 3);
     expect((estimate.annualizedFundingRate ?? 0) / 3).toBeCloseTo(-0.036525, 10);
   });
@@ -274,8 +277,8 @@ describe("projectBufferDepletion (retained from the earlier build)", () => {
   const state = bufferStateFromBps(1_700_000, 100_000_000, 300);
 
   // -0.109575 is -0.0000125/hr annualized on the 365.25-day basis, so the daily
-  // figure this scenario implies is exactly -30,000 USD again. On the old 8760
-  // basis the same daily figure came from -0.1095.
+  // figure this scenario implies is exactly -30,000 USD again. On the old
+  // 365-day basis the same daily figure came from -0.1095.
   const ANNUALIZED_RATE = -0.109575;
 
   it("still projects from an annualized rate", () => {

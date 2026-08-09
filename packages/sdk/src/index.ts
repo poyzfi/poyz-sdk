@@ -179,6 +179,7 @@ export {
   enabledVenues,
   isVenueEnabled,
   oracleToDecimal,
+  requireVenueId,
   venueIdFromName,
   venueName,
 } from "./accounts.js";

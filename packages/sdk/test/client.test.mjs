@@ -683,7 +683,47 @@ test("a retired venue the API still lists gets no slot, so it cannot enter a pro
   });
   const [velocity, mango, zeta] = (await api.getVenues()).data;
   assert.equal(velocity.venueId, 1);
-  assert.equal(mango.venueId, null);
-  assert.equal(zeta.venueId, null);
+  // 0 is the unset slot, which the program rejects, so a retired venue the API
+  // still lists cannot be committed against. It is reported, not hidden.
+  assert.equal(mango.venueId, 0);
+  assert.equal(zeta.venueId, 0);
   assert.equal(mango.status, "discontinued");
+});
+
+test("a venue id sent by the API is ignored; the slot comes from the program's contract", async () => {
+  // The backend has shipped 0-base venue ids. If this SDK took a numeric id from
+  // an API response, a 0 would be the unset sentinel on chain and a 1 would name
+  // the wrong venue. It does not read one: the slot is resolved from the venue
+  // NAME through the contract the program publishes, so a wrong number in the
+  // payload cannot reach a proof.
+  const api = apiClient({
+    [POYZ_API_ROUTES.venues]: {
+      available: true,
+      data: {
+        venues: [
+          {
+            venue: "velocity",
+            // Deliberately wrong, in the 0-base scheme the backend still uses.
+            venue_id: 0,
+            id: 0,
+            status: "live",
+            carry: { kind: "funding", annualized_pct: -175.0, direction: "paid" },
+          },
+          {
+            venue: "jupiter-perps",
+            venue_id: 1,
+            id: 1,
+            status: "live",
+            carry: { kind: "borrow_fee", annualized_pct: 6.14, direction: "paid" },
+          },
+        ],
+      },
+    },
+  });
+
+  const [velocity, jupiter] = (await api.getVenues()).data;
+  assert.equal(velocity.venueId, 1, "velocity is slot 1 whatever the API said");
+  assert.equal(jupiter.venueId, 2, "jupiter-perps is slot 2 whatever the API said");
+  assert.notEqual(velocity.venueId, 0, "slot 0 is the unset sentinel and can never name a venue");
+  assert.notEqual(jupiter.venueId, 1, "the API's 1 must not be taken as velocity's slot");
 });

@@ -22,13 +22,13 @@ describe("interval constants", () => {
     // 24 * 365.25 = 8766 exactly; 365.25 is 1461/4 and exact in binary floats.
     expect(HOURS_PER_YEAR).toBe(8766);
     // The superseded 365-day basis. Pinned as a negative so a revert is loud.
-    expect(HOURS_PER_YEAR).not.toBe(8760);
+    expect(HOURS_PER_YEAR).not.toBe(24 * 365);
   });
 
   it("keeps hours-per-year and days-per-year on the same basis", () => {
     // This identity is what leaves the daily-basis runway table untouched by the
-    // 8760 -> 8766 change. If it ever fails, b / f_d starts moving with the
-    // choice of year length, which it must not.
+    // move from the 365-day basis to 365.25. If it ever fails, b / f_d starts
+    // moving with the choice of year length, which it must not.
     expect(HOURS_PER_YEAR / DAYS_PER_YEAR).toBe(HOURS_PER_DAY);
   });
 
@@ -58,19 +58,20 @@ describe("annualization of a negative funding rate (worked check)", () => {
      *   -0.0000125      * 24           = -0.0003          per day  (-0.03%/day)
      *   -0.0000125      * 24 * 365.25  = -0.10957500      per year (-10.9575%)
      *
-     * On the superseded 365-day basis the same rate is -0.0000125 * 8760 =
-     * -0.10950000, that is -10.95%/yr -- the figure earlier risk-spec drafts
-     * quoted in section 1.3. The two differ only by the leap-day quarter
-     * (8766 / 8760 = 1.000685). _DIRECTION.md 8-1 fixes 365.25, so -10.9575%
-     * is the figure this package reports and -10.95% is the 365-day reading of
-     * the same rate, not a disagreement about the rate.
+     * On the superseded 365-day basis the same rate is
+     * -0.0000125 * 24 * 365 = -0.10950000, that is -10.95%/yr -- the figure
+     * earlier risk-spec drafts quoted in section 1.3. The two bases differ only
+     * by the leap-day quarter, a ratio of 365.25 / 365 = 1.000685.
+     * _DIRECTION.md 8-1 fixes 365.25, so -10.9575% is the figure this package
+     * reports and -10.95% is the 365-day reading of the same rate, not a
+     * disagreement about the rate.
      */
     const hourly = perEightHourToHourlyRate(perEightHour);
     expect(hourlyToAnnualRate(hourly)).toBeCloseTo(-0.109575, 10);
     expect(dailyToAnnualRate(hourlyToDailyRate(hourly))).toBeCloseTo(-0.109575, 10);
     // The 365-day reading, recorded so the 0.0075-point gap is never mistaken
     // for an error in the rate itself.
-    expect(hourly * 8760).toBeCloseTo(-0.1095, 10);
+    expect(hourly * 24 * 365).toBeCloseTo(-0.1095, 10);
   });
 
   it("is not -3.65%/yr, the figure a secondary source produced by treating 8h as a day", () => {
@@ -79,7 +80,7 @@ describe("annualization of a negative funding rate (worked check)", () => {
     // The mistaken figure is the correct one divided by three, which is the
     // 8h-to-day interval error. Recording that here so the two are never
     // confused again. -3.65% stays wrong under either year length: this test
-    // is not a casualty of the 8760 -> 8766 change.
+    // is not a casualty of the change of annualization basis.
     expect(annual / 3).toBeCloseTo(-0.036525, 10);
     expect(annual / 3).toBeCloseTo(-0.0365, 4);
   });
@@ -103,8 +104,8 @@ describe("bufferRunwayDays", () => {
 
   it("is unchanged by the annualization basis, because both inputs are per-day", () => {
     // 0.017 / 0.0003 = 56.666..., and no year length appears in that division.
-    // This is the guard the 8760 -> 8766 change had to keep intact: the runway
-    // figures the spec publishes are daily-basis and must not move.
+    // This is the guard the change of annualization basis had to keep intact:
+    // the runway figures the spec publishes are daily-basis and must not move.
     expect(bufferRunwayDays(0.017, 0.0003)).toBe(0.017 / 0.0003);
     expect(bufferRunwayDays(0.01, 0.0003)).toBeCloseTo(33.3, 1);
     expect(bufferRunwayDays(0.03, 0.03)).toBeCloseTo(1.0, 9);

@@ -50,8 +50,12 @@ export type VenueCarryModel = "funding-receiving" | "borrow-fee-paying" | (strin
 export interface VenueExposureView {
   readonly venue: string;
   readonly displayName: string | null;
-  /** Venue slot, 1-based. Null when the API reports a venue this SDK has no slot for. */
-  readonly venueId: number | null;
+  /**
+   * Venue slot, 1-based, resolved from the name through the program's contract.
+   * `0` means the name maps to no slot -- a retired venue or one this build does
+   * not know -- and 0 is never addressable on chain.
+   */
+  readonly venueId: number;
   /** `live` | `candidate` | `discontinued` | `unavailable`, as the API reports it. */
   readonly status: string | null;
   readonly market: string | null;

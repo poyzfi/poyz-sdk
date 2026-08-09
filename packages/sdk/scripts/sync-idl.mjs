@@ -150,6 +150,60 @@ for (const field of ["idBase", "unsetId", "maxAssignableId", "venues", "aliases"
   }
 }
 
+// venues.json is generated from the program, so it can go stale the same way
+// anything generated can. The values that actually run through `require!` are
+// the Rust constants, so those are checked here -- at generation time, in the
+// monorepo, where state.rs exists. If the two ever disagree, Rust wins and this
+// refuses to emit rather than baking the wrong table into the SDK.
+const statePath = resolve(anchorRoot, "programs/poyz/src/state.rs");
+if (existsSync(statePath)) {
+  const rust = readFileSync(statePath, "utf8");
+  const constant = (name) => {
+    const match = rust.match(new RegExp(`pub const ${name}: u8 = (\\d+);`));
+    return match === null ? null : Number(match[1]);
+  };
+
+  const expected = {
+    none: constant("VENUE_NONE"),
+    velocity: constant("VENUE_VELOCITY"),
+    "jupiter-perps": constant("VENUE_JUPITER_PERPS"),
+    adrena: constant("VENUE_ADRENA"),
+    "flash-trade": constant("VENUE_FLASH_TRADE"),
+    simulated: constant("VENUE_SIMULATED"),
+  };
+
+  const drift = [];
+  for (const [name, slot] of Object.entries(expected)) {
+    if (slot === null) {
+      drift.push(`state.rs has no constant for "${name}"`);
+      continue;
+    }
+    if (venues.venues[name] !== slot) {
+      drift.push(`${name}: state.rs says ${slot}, venues.json says ${venues.venues[name]}`);
+    }
+  }
+  if (expected.none !== venues.unsetId) {
+    drift.push(`unset sentinel: state.rs says ${expected.none}, venues.json says ${venues.unsetId}`);
+  }
+  if (expected.velocity !== venues.idBase) {
+    drift.push(`id base: state.rs starts assignable ids at ${expected.velocity}, venues.json says ${venues.idBase}`);
+  }
+
+  if (drift.length > 0) {
+    throw new Error(
+      "venue contract disagrees with the program's own constants. The Rust constants are what " +
+        `run through require!, so they win:\n  ${drift.join("\n  ")}\n` +
+        `Regenerate ${venuesPath} from ${statePath}.`,
+    );
+  }
+  process.stdout.write(`sync-idl: venue contract checked against ${statePath}\n`);
+} else {
+  process.stdout.write(
+    `sync-idl: WARNING ${statePath} not found, so the venue contract was not checked against the ` +
+      "program's own constants.\n",
+  );
+}
+
 const venuesBody = `/**
  * GENERATED FILE -- do not edit by hand.
  *
