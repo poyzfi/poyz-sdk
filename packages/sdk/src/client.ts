@@ -33,6 +33,7 @@ import {
 } from "./errors.js";
 import {
   KEEPER_ATTESTATION_WARNING,
+  PROOF_RECOMPUTED_WARNING,
   PoyzTransactionPlan,
   TWO_STEP_WARNING,
   buildBufferDepositInstruction,
@@ -47,6 +48,7 @@ import {
   buildRedeemCancelInstruction,
   buildRedeemConfirmInstruction,
   buildRedeemRequestInstruction,
+  buildReportVenueStateInstruction,
   buildRequestUnstakeInstruction,
   buildStakeInstruction,
   buildUnstakeInstruction,
@@ -65,6 +67,7 @@ import {
   type RedeemCancelParams,
   type RedeemConfirmParams,
   type RedeemRequestParams,
+  type ReportVenueStateParams,
   type RequestUnstakeParams,
   type StakeParams,
   type UnstakeParams,
@@ -634,11 +637,37 @@ export class PoyzClient {
       params.keeper,
       [
         KEEPER_ATTESTATION_WARNING,
+        PROOF_RECOMPUTED_WARNING,
         "The program rejects the proof unless the sequence matches the protocol counter, the slot is " +
           "strictly newer than the last proof, the oracle is fresh, and deltaBpsAfter is inside the band.",
       ],
       (ctx) => buildCommitRebalanceProofInstruction(ctx, params),
     );
+  }
+
+  /**
+   * Build an unsigned `report_venue_state`.
+   *
+   * Authority-signed. The protocol is fail-closed on this reading, so it is an
+   * operational feed rather than a one-off setting.
+   */
+  buildReportVenueState(params: ReportVenueStateParams): Promise<PoyzTransactionPlan> {
+    return this.plan(
+      `Report venue ${params.venueId} at ${params.netCarryBps} bps net carry`,
+      params.authority,
+      [
+        "Issuance is rejected while this reading is missing or older than max_venue_state_age_sec, " +
+          "and while supply would exceed the reported capacity. Stopping this feed stops minting.",
+        "Report what the venue actually offers. Overstating capacity lets the protocol issue more " +
+          "than the hedge can absorb, which is the failure the cap exists to prevent.",
+      ],
+      (ctx) => buildReportVenueStateInstruction(ctx, params),
+    );
+  }
+
+  /** Build, sign and send a venue state report. */
+  async reportVenueState(params: ReportVenueStateParams & { signer: PoyzSigner }): Promise<SendResult> {
+    return this.sendTransaction(await this.buildReportVenueState(params), params.signer);
   }
 
   /** Build an unsigned `buffer_deposit`. */

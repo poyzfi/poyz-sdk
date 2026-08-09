@@ -10,14 +10,27 @@
  * Run it whenever packages/anchor-program is rebuilt, then commit the result.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(here, "..");
-const idlPath = resolve(packageRoot, "../anchor-program/target/idl/poyz.json");
+const anchorRoot = resolve(packageRoot, "../anchor-program");
 const outPath = resolve(packageRoot, "src/generated/idl.ts");
+const venuesOutPath = resolve(packageRoot, "src/generated/venues.ts");
+
+// `idl/` is what the program publishes and what the public repository ships;
+// `target/idl/` is the raw anchor build output. Prefer the published copy so the
+// SDK and the public IDL cannot disagree, and fall back to the build output for
+// a working tree that has not run the copy step yet.
+const idlCandidates = [resolve(anchorRoot, "idl/poyz.json"), resolve(anchorRoot, "target/idl/poyz.json")];
+const idlPath = idlCandidates.find((candidate) => existsSync(candidate));
+if (idlPath === undefined) {
+  throw new Error(`no IDL found. Looked in:\n  ${idlCandidates.join("\n  ")}`);
+}
+
+const venuesPath = resolve(anchorRoot, "idl/venues.json");
 
 const idl = JSON.parse(readFileSync(idlPath, "utf8"));
 
@@ -115,10 +128,72 @@ export const IDL_ERRORS: readonly PoyzIdlError[] = ${JSON.stringify(errors, null
 mkdirSync(dirname(outPath), { recursive: true });
 writeFileSync(outPath, body, "utf8");
 
+// ---------------------------------------------------------------- venue contract
+//
+// The venue id mapping is a cross-package contract that an IDL cannot carry: it
+// is plain constants, not accounts or instructions. The program emits it beside
+// the IDL, and every package reads that file rather than keeping its own copy.
+// Two packages each holding a correct-looking table is how the primary venue
+// ends up registered under two different names, and a string mismatch there is
+// not something a type checker can see -- it fails at runtime, on every proof.
+if (!existsSync(venuesPath)) {
+  throw new Error(
+    `no venue contract at ${venuesPath}. The SDK does not keep its own venue table; ` +
+      "regenerate it from the program with scripts/copy-idl.js.",
+  );
+}
+const venues = JSON.parse(readFileSync(venuesPath, "utf8"));
+
+for (const field of ["idBase", "unsetId", "maxAssignableId", "venues", "aliases", "retired"]) {
+  if (venues[field] === undefined) {
+    throw new Error(`venue contract at ${venuesPath} is missing "${field}"`);
+  }
+}
+
+const venuesBody = `/**
+ * GENERATED FILE -- do not edit by hand.
+ *
+ * Source: ${venuesPath.replace(resolve(packageRoot, "../.."), "").replace(/^\//, "")}
+ * Regenerate: npm run sync-idl --workspace @poyz/sdk
+ *
+ * The venue id contract, emitted by the program alongside its IDL. This SDK does
+ * not keep a second copy: two tables that look right independently are how the
+ * primary venue ends up registered under two names, and that mismatch is a
+ * string, so nothing catches it until every proof commit fails at runtime.
+ */
+
+/** Slot numbering starts here. Slot ${venues.unsetId} is the unset value and is never a venue. */
+export const VENUE_ID_BASE = ${venues.idBase};
+export const VENUE_ID_UNSET = ${venues.unsetId};
+export const VENUE_ID_MAX_ASSIGNABLE = ${venues.maxAssignableId};
+
+/** Canonical venue name to slot. */
+export const VENUE_SLOTS: Readonly<Record<string, number>> = ${JSON.stringify(venues.venues, null, 2)};
+
+/** Accepted aliases, mapping an alternate spelling to a canonical name. */
+export const VENUE_ALIASES: Readonly<Record<string, string>> = ${JSON.stringify(venues.aliases, null, 2)};
+
+/** Venues that no longer operate, with the reason they were retired. */
+export const VENUE_RETIRED: Readonly<Record<string, string>> = ${JSON.stringify(venues.retired, null, 2)};
+
+/** Bitmask of every assignable slot. Bit ${venues.unsetId} is permanently unused. */
+export const VENUE_FLAGS_MASK = ${venues.venueFlagsMask ?? 0};
+
+/** Bitmask the program initialises with. */
+export const VENUE_FLAGS_DEFAULT = ${venues.defaultVenueFlags ?? 0};
+`;
+
+writeFileSync(venuesOutPath, venuesBody, "utf8");
+
 process.stdout.write(
   `sync-idl: wrote ${outPath}\n` +
+    `  source         ${idlPath}\n` +
     `  program        ${idl.address}\n` +
-    `  instructions   ${Object.keys(instructionDiscriminators).join(", ")}\n` +
+    `  instructions   ${idl.instructions.length}: ${Object.keys(instructionDiscriminators).join(", ")}\n` +
     `  accounts       ${Object.keys(accountDiscriminators).join(", ")}\n` +
-    `  errors         ${errors.length}\n`,
+    `  errors         ${errors.length}\n` +
+    `sync-idl: wrote ${venuesOutPath}\n` +
+    `  venues         ${Object.entries(venues.venues).map(([n, id]) => `${id}=${n}`).join(" ")}\n` +
+    `  aliases        ${Object.entries(venues.aliases).map(([a, n]) => `${a}->${n}`).join(" ") || "none"}\n` +
+    `  retired        ${Object.keys(venues.retired).join(", ") || "none"}\n`,
 );

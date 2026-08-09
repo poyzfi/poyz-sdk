@@ -63,6 +63,17 @@ export {
 } from "./errors.js";
 
 export {
+  VENUE_ALIASES,
+  VENUE_FLAGS_DEFAULT,
+  VENUE_FLAGS_MASK,
+  VENUE_ID_BASE,
+  VENUE_ID_MAX_ASSIGNABLE,
+  VENUE_ID_UNSET,
+  VENUE_RETIRED,
+  VENUE_SLOTS,
+} from "./generated/venues.js";
+
+export {
   ACCOUNT_DISCRIMINATORS,
   EVENT_DISCRIMINATORS,
   IDL_METADATA,
@@ -175,6 +186,7 @@ export {
 export {
   KEEPER_ATTESTATION_WARNING,
   POYZ_INSTRUCTION_SUPPORT,
+  PROOF_RECOMPUTED_WARNING,
   PoyzTransactionPlan,
   TWO_STEP_WARNING,
   buildBufferDepositInstruction,
@@ -189,6 +201,7 @@ export {
   buildRedeemCancelInstruction,
   buildRedeemConfirmInstruction,
   buildRedeemRequestInstruction,
+  buildReportVenueStateInstruction,
   buildRequestUnstakeInstruction,
   buildStakeInstruction,
   buildUnstakeInstruction,
@@ -207,10 +220,24 @@ export {
   type RedeemCancelParams,
   type RedeemConfirmParams,
   type RedeemRequestParams,
+  type ReportVenueStateParams,
   type RequestUnstakeParams,
   type StakeParams,
   type UnstakeParams,
 } from "./instructions.js";
+
+export {
+  computeProofHash,
+  computeVenuesHash,
+  encodeExecutionPayload,
+  sha256,
+  verifyProof,
+  verifyProofChain,
+  type ExecutionFill,
+  type ExecutionPayload,
+  type ProofChainLink,
+  type ProofVerification,
+} from "./proof.js";
 
 export {
   keypairSigner,

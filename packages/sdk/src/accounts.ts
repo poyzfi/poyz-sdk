@@ -12,6 +12,14 @@ import { PublicKey } from "@solana/web3.js";
 import { BorshReader, hasDiscriminator, toHex } from "./borsh.js";
 import { PoyzChainError, PoyzConfigError } from "./errors.js";
 import { ACCOUNT_DISCRIMINATORS } from "./generated/idl.js";
+import {
+  VENUE_ALIASES,
+  VENUE_ID_BASE,
+  VENUE_ID_MAX_ASSIGNABLE,
+  VENUE_ID_UNSET,
+  VENUE_RETIRED,
+  VENUE_SLOTS,
+} from "./generated/venues.js";
 import { baseUnitsToDecimal } from "./units.js";
 import type {
   KeeperView,
@@ -39,34 +47,30 @@ export const VAULT_FLAGS_ALL =
 /**
  * Hedge venue slots, by the `venue_id` the program stores.
  *
- * The mapping is 1-based on purpose. Slot `0` is the u8 zero value, so a field
- * that was never set is indistinguishable from a deliberate "primary venue" if
- * the primary lives at 0 -- a proof would then be silently attributed to a venue
- * nobody chose. The program rejects 0, and so does this SDK.
- *
- * Slot 1 is Velocity, which is the same venue that traded as Drift before the
- * 2026-07 rebrand. Keeping the slot means historical proofs keep their meaning,
- * and the string `drift` is accepted as an alias for it.
+ * Derived from the contract the program publishes beside its IDL, never from a
+ * table kept here. The numbering is 1-based on purpose: slot `0` is the u8 zero
+ * value, so a field that was never set is indistinguishable from a deliberate
+ * choice if the primary venue lives at 0 -- a proof would then be silently
+ * attributed to a venue nobody picked. The program rejects 0, and so does this.
  */
-export const VENUE_NAMES: Readonly<Record<number, string>> = {
-  1: "velocity",
-  2: "jupiter-perps",
-  3: "adrena",
-  4: "flash-trade",
-  255: "simulated",
-};
+export const VENUE_NAMES: Readonly<Record<number, string>> = Object.freeze(
+  Object.fromEntries(
+    Object.entries(VENUE_SLOTS)
+      .filter(([, id]) => id !== VENUE_ID_UNSET)
+      .map(([name, id]) => [id, name]),
+  ),
+);
 
-/** Canonical venue name to slot, including accepted aliases. */
-export const VENUE_IDS: Readonly<Record<string, number>> = {
-  velocity: 1,
-  drift: 1,
-  "jupiter-perps": 2,
-  jupiter: 2,
-  adrena: 3,
-  "flash-trade": 4,
-  flash: 4,
-  simulated: 255,
-};
+/** Canonical venue name to slot, including the accepted aliases. */
+export const VENUE_IDS: Readonly<Record<string, number>> = Object.freeze({
+  ...VENUE_SLOTS,
+  ...Object.fromEntries(
+    Object.entries(VENUE_ALIASES).flatMap(([alias, canonical]) => {
+      const id = VENUE_SLOTS[canonical];
+      return id === undefined ? [] : [[alias, id] as const];
+    }),
+  ),
+});
 
 /**
  * Venues that no longer operate, with the reason.
@@ -75,12 +79,7 @@ export const VENUE_IDS: Readonly<Record<string, number>> = {
  * an old proof is refused with an explanation instead of falling through to
  * "unknown venue".
  */
-export const RETIRED_VENUES: Readonly<Record<string, string>> = {
-  zeta: "Zeta Markets stopped perpetual operations on 2025-05-01.",
-  "zeta-markets": "Zeta Markets stopped perpetual operations on 2025-05-01.",
-  mango: "Mango v4 wound down after the 2025-01 settlement and no longer operates.",
-  "mango-v4": "Mango v4 wound down after the 2025-01 settlement and no longer operates.",
-};
+export const RETIRED_VENUES: Readonly<Record<string, string>> = VENUE_RETIRED;
 
 /**
  * Name for a venue slot.
@@ -90,7 +89,7 @@ export const RETIRED_VENUES: Readonly<Record<string, string>> = {
  * attribution.
  */
 export function venueName(venueId: number): string {
-  if (venueId === 0) {
+  if (venueId === VENUE_ID_UNSET) {
     return "none";
   }
   return VENUE_NAMES[venueId] ?? `venue-${venueId}`;
@@ -99,9 +98,9 @@ export function venueName(venueId: number): string {
 /**
  * Resolve a venue name to its slot.
  *
- * Accepts the rename alias (`drift` resolves to Velocity's slot 1), because the
- * two halves of this system normalise the name differently and a mismatch there
- * is not caught by the type checker -- it fails at runtime, on every proof
+ * Accepts the rename alias published in the venue contract, because the halves
+ * of this system normalise the primary venue's name differently and a mismatch
+ * there is not caught by the type checker -- it fails at runtime, on every proof
  * commit, against the primary venue.
  *
  * @throws PoyzConfigError for a retired venue, with why it was retired, and for
@@ -116,8 +115,8 @@ export function venueIdFromName(name: string): number {
   const id = VENUE_IDS[key];
   if (id === undefined) {
     throw new PoyzConfigError(
-      `unknown hedge venue "${name}". Known venues: ${Object.keys(VENUE_NAMES)
-        .map((slot) => `${slot}=${VENUE_NAMES[Number(slot)]}`)
+      `unknown hedge venue "${name}". Known venues: ${Object.entries(VENUE_IDS)
+        .map(([venue, slot]) => `${slot}=${venue}`)
         .join(", ")}`,
     );
   }
@@ -131,7 +130,7 @@ export function venueIdFromName(name: string): number {
  * permanently unused.
  */
 export function isVenueEnabled(venueFlags: number, venueId: number): boolean {
-  if (venueId <= 0 || venueId > 7) {
+  if (venueId <= VENUE_ID_UNSET || venueId > VENUE_ID_MAX_ASSIGNABLE) {
     return false;
   }
   return (venueFlags & (1 << venueId)) !== 0;
@@ -140,7 +139,7 @@ export function isVenueEnabled(venueFlags: number, venueId: number): boolean {
 /** Enabled venue slots, decoded from a `venue_flags` bitmask. */
 export function enabledVenues(venueFlags: number): readonly number[] {
   const out: number[] = [];
-  for (let id = 1; id <= 7; id += 1) {
+  for (let id = VENUE_ID_BASE; id <= VENUE_ID_MAX_ASSIGNABLE; id += 1) {
     if (isVenueEnabled(venueFlags, id)) {
       out.push(id);
     }

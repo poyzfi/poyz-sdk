@@ -66,6 +66,23 @@ describe("public surface from the earlier build is preserved", () => {
     expect(typeof api.estimateBufferDepletion).toBe("function");
     expect(typeof api.timeToYieldWipeout).toBe("function");
   });
+
+  it("exports the carry gate and the measured regimes in the same pure style", () => {
+    expect(typeof api.evaluateCarryGate).toBe("function");
+    expect(typeof api.carryFloorDailyRate).toBe("function");
+    expect(typeof api.carryFloorAnnualRate).toBe("function");
+    expect(typeof api.carryGateAllowsMintBps).toBe("function");
+    expect(api.DEFAULT_CARRY_GATE_CONFIG.minRunwayDays).toBe(30);
+    expect(api.MEASURED_CARRY_REGIMES).toHaveLength(4);
+    expect(api.BASELINE_CARRY_REGIME.id).toBe("measured_1y");
+    expect(api.MEASURED_CARRY_RUNWAY_TABLE).toHaveLength(16);
+  });
+
+  it("still exports the annualization constants, now on the 365.25-day basis", () => {
+    expect(api.HOURS_PER_YEAR).toBe(8766);
+    expect(api.DAYS_PER_YEAR).toBe(365.25);
+    expect(api.HOURS_PER_YEAR_JULIAN).toBe(8766);
+  });
 });
 
 describe("copy rules hold across the package", () => {

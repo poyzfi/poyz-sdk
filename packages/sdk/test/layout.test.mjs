@@ -27,6 +27,14 @@ import {
   POYZ_IDL,
   POYZ_IDL_ERRORS,
   POYZ_PROGRAM_ID,
+  VENUE_ALIASES,
+  VENUE_FLAGS_DEFAULT,
+  VENUE_FLAGS_MASK,
+  VENUE_ID_BASE,
+  VENUE_ID_MAX_ASSIGNABLE,
+  VENUE_ID_UNSET,
+  VENUE_RETIRED,
+  VENUE_SLOTS,
 } from "../dist/esm/index.js";
 
 /** Render an IDL type node the way ACCOUNT_LAYOUTS spells it. */
@@ -116,6 +124,7 @@ test("wrapped instruction arguments match the IDL", () => {
       "collateral_notional:u64",
     ],
     buffer_deposit: ["amount:u64"],
+    report_venue_state: ["venue_id:u8", "net_carry_bps:i32", "capacity_notional:u64"],
   };
 
   for (const [name, args] of Object.entries(expected)) {
@@ -199,6 +208,7 @@ test("wrapped instruction account order matches the IDL", () => {
       "buffer_vault",
       "token_program",
     ],
+    report_venue_state: ["authority", "config"],
   };
 
   for (const [name, accounts] of Object.entries(expected)) {
@@ -274,4 +284,33 @@ test("error codes the SDK names by hand still resolve to those names", () => {
     assert.ok(entry !== undefined, `the program no longer defines the error ${name}`);
     assert.ok(entry.msg.length > 0, `${name} has no message`);
   }
+});
+
+test("the venue contract the SDK compiled in matches the one the program published", () => {
+  // The SDK reads the venue table from the program's own emitted contract. This
+  // pins the properties that must hold whatever the contract says, so a future
+  // edit that reintroduces a 0-based slot or drops the rename alias fails here.
+  assert.equal(VENUE_ID_UNSET, 0, "the unset slot must stay 0");
+  assert.equal(VENUE_ID_BASE, 1, "assignable slots must start at 1, so unset is distinguishable");
+  assert.ok(VENUE_ID_MAX_ASSIGNABLE >= VENUE_ID_BASE);
+
+  for (const [name, slot] of Object.entries(VENUE_SLOTS)) {
+    if (slot === VENUE_ID_UNSET) {
+      assert.equal(name, "none", "only 'none' may occupy the unset slot");
+      continue;
+    }
+    assert.ok(slot > 0, `${name} must not sit on the unset slot`);
+  }
+
+  for (const [alias, canonical] of Object.entries(VENUE_ALIASES)) {
+    assert.ok(VENUE_SLOTS[canonical] !== undefined, `alias ${alias} points at unknown ${canonical}`);
+  }
+
+  for (const retired of Object.keys(VENUE_RETIRED)) {
+    assert.equal(VENUE_SLOTS[retired], undefined, `retired venue ${retired} must hold no slot`);
+  }
+
+  // bit index == venue id, so bit 0 can never be set in the mask.
+  assert.equal(VENUE_FLAGS_MASK & 1, 0, "bit 0 is permanently unused");
+  assert.equal(VENUE_FLAGS_DEFAULT & 1, 0);
 });

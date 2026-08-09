@@ -27,10 +27,10 @@ export const HOURS_PER_DAY = 24;
  * common years and one leap year average to 365.25 days.
  *
  * `_DIRECTION.md` 8-1 fixes this as the annualization basis for every POYZ rate
- * and calls out `8760` explicitly as the wrong number:
+ * and calls out the 365-day basis explicitly as the wrong number:
  *
  * ```
- * annualization : * 24 * 365.25   (not 8760)
+ * annualization : * 24 * 365.25   (not * 24 * 365)
  * ```
  *
  * `funding-vault` defines the same pair of constants with the same values. The

@@ -17,7 +17,12 @@ import {
   POYZ_PROGRAM_ID,
   VAULT_FLAGS,
   VAULT_FLAGS_ALL,
+  VENUE_ALIASES,
+  VENUE_FLAGS_DEFAULT,
+  VENUE_ID_UNSET,
   VENUE_NAMES,
+  VENUE_RETIRED,
+  VENUE_SLOTS,
   annualizeFundingRate,
   baseUnitsToDecimal,
   decimalToBaseUnits,
@@ -389,35 +394,58 @@ test("decodeRebalanceProof converts notionals only when the decimals are known",
 test("venue slot 0 is never named after a real venue", () => {
   // 0 is the u8 zero value. Naming it after the primary venue is how a field
   // that was never set becomes a false attribution in a committed proof.
+  assert.equal(VENUE_ID_UNSET, 0);
   assert.equal(venueName(0), "none");
   assert.equal(venueName(1), "velocity");
   assert.equal(venueName(2), "jupiter-perps");
   assert.equal(venueName(9), "venue-9");
 });
 
-test("velocity and drift resolve to the same slot", () => {
-  // The two halves of this system normalise the primary venue name differently.
-  // A mismatch there is a string, so the type checker cannot catch it; it fails
-  // at runtime on every proof commit. This test is the guard.
-  assert.equal(venueIdFromName("velocity"), 1);
-  assert.equal(venueIdFromName("drift"), 1);
-  assert.equal(venueIdFromName("Drift"), 1);
-  assert.equal(venueIdFromName(" VELOCITY "), 1);
-  assert.equal(venueIdFromName("jupiter-perps"), 2);
-  assert.equal(venueIdFromName("jupiter"), 2);
-  assert.equal(venueIdFromName("simulated"), 255);
+test("the venue table comes from the program's contract, not a local copy", () => {
+  // The expectations here are read from the generated contract rather than
+  // written out again. A second hand-maintained table is exactly the failure
+  // this is guarding against: two tables that each look right, differing on one
+  // string, discovered only when every proof commit fails.
+  for (const [name, slot] of Object.entries(VENUE_SLOTS)) {
+    if (slot === VENUE_ID_UNSET) {
+      continue;
+    }
+    assert.equal(venueIdFromName(name), slot, `${name} must resolve to its contract slot`);
+    assert.equal(venueName(slot), name, `slot ${slot} must name back to ${name}`);
+  }
 });
 
-test("a retired venue is refused with the reason, not mapped to a slot", () => {
-  assert.throws(() => venueIdFromName("zeta"), /stopped perpetual operations on 2025-05-01/);
-  assert.throws(() => venueIdFromName("mango-v4"), /no longer operates/);
+test("every published alias resolves to the same slot as its canonical name", () => {
+  // The primary venue is spelled two ways across this system after the rebrand.
+  // A mismatch is a string, so the type checker cannot see it.
+  assert.ok(Object.keys(VENUE_ALIASES).length > 0, "the contract publishes at least one alias");
+  for (const [alias, canonical] of Object.entries(VENUE_ALIASES)) {
+    assert.equal(
+      venueIdFromName(alias),
+      venueIdFromName(canonical),
+      `${alias} and ${canonical} must be the same slot`,
+    );
+  }
+  assert.equal(venueIdFromName("drift"), venueIdFromName("velocity"), "the rebrand alias holds");
+  assert.equal(venueIdFromName("Drift"), venueIdFromName(" VELOCITY "), "matching is case and space insensitive");
+});
+
+test("a retired venue is refused with the contract's own reason", () => {
+  assert.ok(Object.keys(VENUE_RETIRED).length > 0, "the contract lists retired venues");
+  for (const [name, reason] of Object.entries(VENUE_RETIRED)) {
+    assert.throws(
+      () => venueIdFromName(name),
+      (error) => error.message.includes(reason),
+      `${name} must be refused with the published reason`,
+    );
+    assert.equal(Object.values(VENUE_NAMES).includes(name), false, `${name} must have no slot`);
+  }
   assert.throws(() => venueIdFromName("nonesuch"), /unknown hedge venue/);
-  assert.equal(Object.values(VENUE_NAMES).includes("zeta"), false);
-  assert.equal(Object.values(VENUE_NAMES).includes("mango"), false);
 });
 
 test("venue_flags bit index is the venue id, and bit 0 is never a venue", () => {
-  const velocityOnly = 0b0000_0010;
+  const velocityOnly = VENUE_FLAGS_DEFAULT;
+  assert.equal(velocityOnly, 0b0000_0010, "the contract's default enables velocity only");
   assert.equal(isVenueEnabled(velocityOnly, 1), true);
   assert.equal(isVenueEnabled(velocityOnly, 2), false);
   assert.equal(isVenueEnabled(velocityOnly, 0), false, "slot 0 can never be enabled");

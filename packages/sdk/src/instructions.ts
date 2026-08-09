@@ -1029,6 +1029,53 @@ export function buildBufferDepositInstruction(
   );
 }
 
+export interface ReportVenueStateParams {
+  /** Protocol authority, base58. This instruction is authority-signed. */
+  readonly authority: string;
+  readonly venueId: number;
+  /** Net carry the venue is currently offering, in basis points, signed. */
+  readonly netCarryBps: number;
+  /** Hedge capacity available at that venue, in synthetic base units. */
+  readonly capacityNotional: bigint;
+}
+
+/**
+ * Build `report_venue_state`.
+ *
+ * The protocol is fail-closed on this: issuance is rejected when the venue state
+ * is missing or older than `maxVenueStateAgeSec`, and when supply would exceed
+ * the reported capacity. So this is not an occasional admin action -- it is a
+ * recurring feed, and the protocol stops minting when it stops arriving. That is
+ * why it is wrapped here while the one-shot governance instructions are not.
+ *
+ * @throws PoyzConfigError on an unset venue slot or a malformed address.
+ */
+export function buildReportVenueStateInstruction(
+  ctx: PoyzChainContext,
+  params: ReportVenueStateParams,
+): BuiltInstruction {
+  assertVenueId(params.venueId);
+  assertDeltaBps(params.netCarryBps, "netCarryBps");
+  assertNonNegative(params.capacityNotional, "capacityNotional");
+
+  const data = new BorshWriter()
+    .bytes(discriminator("report_venue_state"))
+    .u8(params.venueId)
+    .i32(params.netCarryBps)
+    .u64(params.capacityNotional)
+    .toUint8Array();
+
+  return instruction(
+    "report_venue_state",
+    ctx.programId,
+    [
+      { name: "authority", pubkey: params.authority, isSigner: true },
+      configAccount(ctx),
+    ],
+    data,
+  );
+}
+
 /**
  * What the deployed program exposes, by SDK method name.
  *
@@ -1102,6 +1149,13 @@ export const POYZ_INSTRUCTION_SUPPORT: Readonly<
       "proof is what the bond is slashed for.",
   },
   bufferDeposit: { available: true, reason: "Adds first-loss capital to the insurance buffer." },
+  reportVenueState: {
+    available: true,
+    reason:
+      "Authority-signed, but a recurring feed rather than a governance act: issuance is rejected " +
+      "while the venue state is missing, stale past max_venue_state_age_sec, or short of the " +
+      "capacity the supply needs. The protocol stops minting when this stops arriving.",
+  },
   initialize: {
     available: false,
     reason:
@@ -1161,3 +1215,15 @@ export const TWO_STEP_WARNING =
 export const KEEPER_ATTESTATION_WARNING =
   "This instruction attests to a venue-side execution you performed. Submitting it for a trade that " +
   "did not happen is a slashable fault; the bond is slashed into the insurance buffer.";
+
+/**
+ * What the program recomputes rather than trusting.
+ *
+ * Worth stating on a proof plan, because it changes what a wrong number costs:
+ * a mistyped collateral notional or post-delta is rejected outright rather than
+ * recorded, so the failure is loud and immediate.
+ */
+export const PROOF_RECOMPUTED_WARNING =
+  "The program recomputes collateralNotional and deltaBpsAfter from the vault and the oracle, and " +
+  "rejects the proof with ProofCollateralMismatch or ProofDeltaMismatch when the reported values " +
+  "disagree. hedgedNotional is the one figure it cannot see, which is what the bond is for.";
