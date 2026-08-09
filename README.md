@@ -155,7 +155,8 @@ poyz unstake withdraw        # withdraw a pending unstake once the cooldown has 
 poyz claim                   # claim funding accrued to a stake position
 
 poyz keeper register         # register as a Delta Keeper and post the initial bond
-poyz keeper bond / unbond    # adjust the bond, unbond after the cooldown
+poyz keeper bond             # add to an existing keeper bond
+poyz keeper unbond           # withdraw from a keeper bond after the cooldown
 poyz keeper run              # watch the delta band as a Delta Keeper would
 poyz keeper report-venue     # report a venue's net carry and capacity
 ```
