@@ -26,8 +26,8 @@
 
 TypeScript packages for [Poyz](https://github.com/poyzfi/poyz), a delta-neutral synthetic
 dollar on Solana: read the live book, quote and build mint and redeem transactions, model
-the buffer against a negative funding regime, and run a Delta Keeper from a terminal or a
-CI job.
+the buffer against a negative funding regime, and watch the delta band as a Delta Keeper
+would, from a terminal or a CI job.
 
 ## Packages
 
@@ -138,18 +138,32 @@ still displays.
 ## Using the CLI
 
 ```bash
-poyz status                  # delta, collateral, funding and config on one screen
-poyz delta                   # deviation per venue against the band
-poyz funding                 # funding paid to the perp short leg
+poyz status                  # delta, collateral, funding and protocol config on one screen
+poyz delta                   # deviation between the spot leg and the perp short, per venue
+poyz funding                 # net carry on the book, signed, funding and cost legs apart
+poyz venue list              # hedge venue slots, which are enabled, how fresh each reading is
 poyz simulate                # project funding over a horizon, negative regime included
 
 poyz mint                    # submit a mint request against SOL or LST collateral
+poyz mint cancel             # reclaim the collateral behind an expired mint request
 poyz redeem                  # submit a redeem request against synthetic dollars
-poyz stake / unstake / claim # funding exposure on synthetic dollars
+poyz redeem cancel           # unwind an expired redeem request
+
+poyz stake                   # take the funding exposure on synthetic dollars
+poyz unstake                 # start the unstake cooldown
+poyz unstake withdraw        # withdraw a pending unstake once the cooldown has elapsed
+poyz claim                   # claim funding accrued to a stake position
 
 poyz keeper register         # register as a Delta Keeper and post the initial bond
-poyz keeper run              # watch the delta band as a keeper would
+poyz keeper bond / unbond    # adjust the bond, unbond after the cooldown
+poyz keeper run              # watch the delta band as a Delta Keeper would
+poyz keeper report-venue     # report a venue's net carry and capacity
 ```
+
+`keeper report-venue` is callable by a bonded keeper as well as by the protocol authority.
+The program checks the bond is active and above `min_keeper_bond` before accepting a
+reading, and caps the reported capacity at `max_reportable_capacity_notional`, so a keeper
+cannot inflate headroom past the ceiling the authority set.
 
 Every write is a dry run unless `--execute` is passed, and `--json` turns any command into
 one JSON object on stdout. Reads can be pointed at the API or at the chain with
