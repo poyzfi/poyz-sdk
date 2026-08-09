@@ -27,7 +27,8 @@ export const VENUE_SLOTS: Readonly<Record<string, number>> = {
 
 /** Accepted aliases, mapping an alternate spelling to a canonical name. */
 export const VENUE_ALIASES: Readonly<Record<string, string>> = {
-  "drift": "velocity"
+  "drift": "velocity",
+  "jupiter": "jupiter-perps"
 };
 
 /** Venues that no longer operate, with the reason they were retired. */

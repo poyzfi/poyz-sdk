@@ -210,7 +210,7 @@ test("wrapped instruction account order matches the IDL", () => {
       "buffer_vault",
       "token_program",
     ],
-    report_venue_state: ["authority", "config"],
+    report_venue_state: ["signer", "config", "keeper_account"],
   };
 
   for (const [name, accounts] of Object.entries(expected)) {

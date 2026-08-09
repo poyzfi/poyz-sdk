@@ -653,13 +653,23 @@ export class PoyzClient {
    */
   buildReportVenueState(params: ReportVenueStateParams): Promise<PoyzTransactionPlan> {
     return this.plan(
-      `Report venue ${params.venueId} at ${params.netCarryBps} bps net carry`,
-      params.authority,
+      `Report venue ${params.venueId} at ${params.netCarryBps} bps net carry, signed as ${params.as}`,
+      params.reporter,
       [
         "Issuance is rejected while this reading is missing or older than max_venue_state_age_sec, " +
           "and while supply would exceed the reported capacity. Stopping this feed stops minting.",
         "Report what the venue actually offers. Overstating capacity lets the protocol issue more " +
-          "than the hedge can absorb, which is the failure the cap exists to prevent.",
+          "than the hedge can absorb, which is the failure the cap exists to prevent, and the " +
+          "program caps a single report at max_reportable_capacity_notional for the same reason.",
+        ...(params.as === "keeper"
+          ? [
+              "Signing as a keeper stakes your bond on this reading. The program requires the keeper " +
+                "account to be active and bonded at or above the protocol minimum, and a bond is " +
+                "slashable for a faulty report.",
+            ]
+          : []),
+        "Reports must not go backwards in time: the program rejects one older than the reading it " +
+          "already holds, so a lagging reporter cannot reopen a gate a fresher one closed.",
       ],
       (ctx) => buildReportVenueStateInstruction(ctx, params),
     );

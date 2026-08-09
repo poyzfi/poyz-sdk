@@ -207,6 +207,7 @@ export const ACCOUNT_LAYOUTS: Readonly<Record<string, readonly (readonly [string
     ["last_settle_at", "i64"],
     ["venue_state_at", "i64"],
     ["venue_capacity_notional", "u64"],
+    ["max_reportable_capacity_notional", "u64"],
     ["max_price_age_sec", "u32"],
     ["request_ttl_sec", "u32"],
     ["min_settlement_delay_sec", "u32"],
@@ -237,7 +238,7 @@ export const ACCOUNT_LAYOUTS: Readonly<Record<string, readonly (readonly [string
     ["vault_flags", "u8"],
     ["venue_flags", "u8"],
     ["last_venue_id", "u8"],
-    ["reserved", "[u8;33]"],
+    ["reserved", "[u8;25]"],
   ],
   Keeper: [
     ["keeper", "pubkey"],
@@ -382,6 +383,7 @@ export function decodeConfig(address: string, data: Uint8Array): ProtocolConfigV
   const lastSettleAt = reader.i64();
   const venueStateAt = reader.i64();
   const venueCapacityNotional = reader.u64();
+  const maxReportableCapacityNotional = reader.u64();
 
   const maxPriceAgeSec = reader.u32();
   const requestTtlSec = reader.u32();
@@ -473,6 +475,7 @@ export function decodeConfig(address: string, data: Uint8Array): ProtocolConfigV
     lastSettleAtMs: secondsToMs(lastSettleAt),
     venueStateAtMs: secondsToMs(venueStateAt),
     venueCapacityNotional: venueCapacityNotional.toString(),
+    maxReportableCapacityNotional: maxReportableCapacityNotional.toString(),
 
     collateralDecimals,
     syntheticDecimals,

@@ -223,8 +223,13 @@ export class PoyzChainClient {
         capturedAtMs: latest.timestampMs,
         deviationRatio: latest.deltaBpsAfter / 10_000,
         deviationBps: latest.deltaBpsAfter,
-        thresholdBps: resolved.deltaBandBps,
-        withinThreshold: Math.abs(latest.deltaBpsAfter) <= resolved.deltaBandBps,
+        // The program requires delta_bps_after to land inside the EXIT band, not
+        // the trigger band. Reporting the trigger here would claim a tolerance
+        // the proof was never held to -- and would call a keeper that stopped
+        // the moment a rebalance became necessary "within threshold".
+        thresholdBps: resolved.deltaExitBps,
+        triggerBps: resolved.deltaBandBps,
+        withinThreshold: Math.abs(latest.deltaBpsAfter) <= resolved.deltaExitBps,
         spotNotionalUsd: latest.collateralNotionalUsd,
         shortNotionalUsd: latest.hedgedNotionalUsd,
         rebalanceCount: resolved.rebalanceCount,

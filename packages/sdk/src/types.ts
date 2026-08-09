@@ -80,8 +80,22 @@ export interface DeltaStatusView {
   readonly deviationRatio: number | null;
   /** The same deviation in basis points, signed. */
   readonly deviationBps: number | null;
-  /** Absolute deviation above which a rebalance proof is rejected. */
+  /**
+   * The band this reading was judged against, in basis points.
+   *
+   * For a chain-attested delta this is the **exit** band: the program requires a
+   * committed proof to land inside it, so it is what the number was actually
+   * held to. It is narrower than {@link DeltaStatusView.triggerBps}.
+   */
   readonly thresholdBps: number | null;
+  /**
+   * Deviation at which a rebalance becomes necessary, in basis points.
+   *
+   * Wider than `thresholdBps` on purpose: the trigger is where a rebalance
+   * starts, the exit band is where it has to finish. Reporting the trigger as
+   * the tolerance would accept a keeper that stopped as soon as it began.
+   */
+  readonly triggerBps: number | null;
   readonly withinThreshold: boolean | null;
   readonly spotNotionalUsd: number | null;
   readonly shortNotionalUsd: number | null;
@@ -222,8 +236,15 @@ export interface ProtocolConfigView {
   readonly minKeeperBond: string;
   readonly maxSyntheticSupply: string;
   readonly accFundingPerShare: string;
-  /** Hedge capacity the authority last reported for the active venue. */
+  /** Hedge capacity last reported for the active venue. */
   readonly venueCapacityNotional: string;
+  /**
+   * Ceiling on a single capacity report.
+   *
+   * A reporter cannot claim more headroom than this, which bounds how much
+   * issuance one bad or compromised report can unlock.
+   */
+  readonly maxReportableCapacityNotional: string;
 
   readonly rebalanceCount: number;
   readonly lastProofSlot: number;

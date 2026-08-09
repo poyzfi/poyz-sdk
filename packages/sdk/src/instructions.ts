@@ -1030,8 +1030,26 @@ export function buildBufferDepositInstruction(
 }
 
 export interface ReportVenueStateParams {
-  /** Protocol authority, base58. This instruction is authority-signed. */
-  readonly authority: string;
+  /**
+   * Address of whoever signs the report, base58.
+   *
+   * Two callers are accepted: the protocol authority, and a registered keeper
+   * that is active and bonded at or above the protocol minimum.
+   *
+   * Named `reporter` rather than `signer` because the send-side variants take a
+   * `signer: PoyzSigner`, and one name meaning both an address and a signing
+   * object is the kind of collision that type-checks into an unusable
+   * intersection.
+   */
+  readonly reporter: string;
+  /**
+   * How the signer is authorised.
+   *
+   * `keeper` attaches the signer's keeper account, which the program checks for
+   * activity and bond. `authority` omits it. Defaulting either way would be
+   * wrong in one of the two cases, so it is stated rather than inferred.
+   */
+  readonly as: "authority" | "keeper";
   readonly venueId: number;
   /** Net carry the venue is currently offering, in basis points, signed. */
   readonly netCarryBps: number;
@@ -1047,6 +1065,11 @@ export interface ReportVenueStateParams {
  * the reported capacity. So this is not an occasional admin action -- it is a
  * recurring feed, and the protocol stops minting when it stops arriving. That is
  * why it is wrapped here while the one-shot governance instructions are not.
+ *
+ * The keeper account is optional in the IDL and its presence is what selects the
+ * authorisation path, so it is passed as an explicit account rather than
+ * omitted: an Anchor optional account is encoded as the program id in the slot
+ * when absent, not by shortening the account list.
  *
  * @throws PoyzConfigError on an unset venue slot or a malformed address.
  */
@@ -1065,12 +1088,18 @@ export function buildReportVenueStateInstruction(
     .u64(params.capacityNotional)
     .toUint8Array();
 
+  // Anchor marks an absent optional account by putting the program's own id in
+  // the slot, keeping the account list the same length.
+  const keeperAccount =
+    params.as === "keeper" ? deriveKeeper(params.reporter, ctx.programId)[0].toBase58() : ctx.programId;
+
   return instruction(
     "report_venue_state",
     ctx.programId,
     [
-      { name: "authority", pubkey: params.authority, isSigner: true },
+      { name: "signer", pubkey: params.reporter, isSigner: true },
       configAccount(ctx),
+      { name: "keeper_account", pubkey: keeperAccount, isWritable: false },
     ],
     data,
   );
@@ -1152,9 +1181,10 @@ export const POYZ_INSTRUCTION_SUPPORT: Readonly<
   reportVenueState: {
     available: true,
     reason:
-      "Authority-signed, but a recurring feed rather than a governance act: issuance is rejected " +
-      "while the venue state is missing, stale past max_venue_state_age_sec, or short of the " +
-      "capacity the supply needs. The protocol stops minting when this stops arriving.",
+      "Signed by the protocol authority or by an active, bonded keeper. A recurring feed rather " +
+      "than a governance act: issuance is rejected while the venue state is missing, stale past " +
+      "max_venue_state_age_sec, or short of the capacity the supply needs. The protocol stops " +
+      "minting when this stops arriving.",
   },
   initialize: {
     available: false,

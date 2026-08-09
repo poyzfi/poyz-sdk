@@ -201,6 +201,10 @@ function mapDelta(envelope: Envelope): DeltaStatusView | null {
     deviationRatio: pctToRatio(deviationPct),
     deviationBps,
     thresholdBps,
+    // The status API publishes the band it measures a live reading against,
+    // which is the trigger. The exit band only constrains a committed proof, so
+    // it is null here rather than guessed.
+    triggerBps: pctToBps(num(data, "breach_pct", "trigger_pct")) ?? thresholdBps,
     withinThreshold:
       bool(data, "within_threshold", "withinThreshold") ??
       (deviationBps !== null && thresholdBps !== null ? Math.abs(deviationBps) <= thresholdBps : null),

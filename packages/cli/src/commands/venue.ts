@@ -1,15 +1,16 @@
 /**
- * `poyz venue list`, `poyz venue report`.
+ * `poyz venue list`, `poyz keeper report-venue`.
  *
  * The protocol is fail-closed on venue state: issuance is rejected while the
  * reading is missing, older than `max_venue_state_age_sec`, or short of the
  * capacity the supply would need. So a stale reading is not a cosmetic gap, it
  * is a halted mint, and these commands exist to make that visible and fixable.
  *
- * `report` is signed by the protocol authority, not by a keeper. It is grouped
- * under `venue` rather than `keeper` for that reason: putting an
- * authority-signed instruction under a keeper command would tell a keeper it can
- * run something it cannot sign.
+ * The report is signed either by the protocol authority or by an active, bonded
+ * keeper, and the keeper is the expected caller: the delta-keeper daemon sends
+ * it on a schedule and this is the manual path for the same job. It therefore
+ * sits under `keeper`, where the bond and slashing warnings belong. `venue list`
+ * stays separate because it signs nothing.
  */
 
 import {
@@ -51,6 +52,13 @@ const CAPACITY_FLAG: FlagSpec = {
   type: "integer",
   placeholder: "<base-units>",
   summary: "Hedge capacity available at the venue, in synthetic base units",
+};
+
+const AS_FLAG: FlagSpec = {
+  name: "as",
+  type: "string",
+  placeholder: "<keeper|authority>",
+  summary: "Which authorisation path to sign under. Defaults to keeper",
 };
 
 /**
@@ -248,14 +256,16 @@ export const venueListCommand: CommandSpec = {
 };
 
 export const venueReportCommand: CommandSpec = {
-  path: ["venue", "report"],
-  summary: "Report a venue's net carry and capacity. Protocol authority only",
-  usage: "poyz venue report --venue <name> --net-carry-bps <n> --capacity <n> --keypair <path> [--execute]",
-  flags: [VENUE_FLAG, CARRY_FLAG, CAPACITY_FLAG],
+  path: ["keeper", "report-venue"],
+  summary: "Report a venue's net carry and capacity. Bonded keeper or protocol authority",
+  usage:
+    "poyz keeper report-venue --venue <name> --net-carry-bps <n> --capacity <n> --keypair <path> [--as keeper|authority] [--execute]",
+  flags: [VENUE_FLAG, CARRY_FLAG, CAPACITY_FLAG, AS_FLAG],
   notes: [
-    "Signed by the protocol authority, not by a keeper. A keeper key cannot send this.",
-    "The protocol is fail-closed on this reading: while it is missing, stale past the configured maximum age, or short of the capacity the supply needs, mint requests are rejected. This is a recurring feed, not a one-off setting.",
-    "Report what the venue actually offers. Overstating capacity lets the protocol issue more than the hedge can absorb, which is the failure the cap exists to prevent.",
+    "Signed as a keeper by default. A keeper must be registered, active, and bonded at or above the protocol minimum, and the bond is slashable for a faulty report. Pass --as authority to sign as the protocol authority instead.",
+    "The protocol is fail-closed on this reading: while it is missing, stale past the configured maximum age, or short of the capacity the supply needs, mint requests are rejected. This is a recurring feed, not a one-off setting; the delta-keeper daemon normally sends it and this is the manual path.",
+    "Report what the venue actually offers. Overstating capacity lets the protocol issue more than the hedge can absorb, which is the failure the cap exists to prevent, and a single report is capped at the protocol's max reportable capacity for the same reason.",
+    "Reports must not go backwards in time. The program rejects one older than the reading it already holds, so a lagging reporter cannot reopen a gate a fresher one closed.",
   ],
   async run(input: CommandInput): Promise<CliResult> {
     const venueId = resolveVenue(input);
@@ -268,10 +278,16 @@ export const venueReportCommand: CommandSpec = {
       throw usageError("venue report needs --capacity as a non-negative number of synthetic base units.");
     }
 
+    const role = getString(input.flags, "as") ?? "keeper";
+    if (role !== "keeper" && role !== "authority") {
+      throw usageError('--as must be "keeper" or "authority".');
+    }
+
     const loaded = loadSignerFor(input, requireKeypairPath(input.globals));
     const client = input.ctx.createClient(clientConfig(input.globals));
     const params: ReportVenueStateParams = {
-      authority: loaded.publicKey,
+      reporter: loaded.publicKey,
+      as: role,
       venueId,
       netCarryBps,
       capacityNotional: BigInt(Math.trunc(capacity)),
@@ -279,7 +295,7 @@ export const venueReportCommand: CommandSpec = {
 
     return runWriteFlow({
       input,
-      command: "venue report",
+      command: "keeper report-venue",
       banner: sections(
         `  ${input.palette.paint("muted", "Venue state report")}`,
         keyValues(
@@ -292,13 +308,19 @@ export const venueReportCommand: CommandSpec = {
               align: "left",
             }),
             row("capacity", { text: `${capacity} base units`, tone: "body", align: "left" }),
-            row("authority", { text: loaded.publicKey, tone: "body", align: "left" }),
+            row("signing as", { text: role, tone: role === "keeper" ? "warn" : "body", align: "left" }),
+            row("signer", { text: loaded.publicKey, tone: "body", align: "left" }),
             row("cluster", { text: input.globals.cluster, tone: "muted", align: "left" }),
           ],
           "    ",
         ),
         [
           "Issuance stays blocked while this reading is missing or older than the configured maximum age, so this is a feed the protocol depends on rather than a setting.",
+          ...(role === "keeper"
+            ? [
+                "Signing as a keeper puts your bond behind this number. The program requires the keeper account to be active and bonded at or above the protocol minimum, and a faulty report is slashable.",
+              ]
+            : ["Signing as the protocol authority. No bond is at stake, and no keeper account is attached."]),
           "If the simulation below fails because the program account does not exist, POYZ is not deployed to the cluster you addressed.",
         ]
           .map((line) => wrap(line, 76, "    "))
@@ -309,9 +331,14 @@ export const venueReportCommand: CommandSpec = {
         venue: venueName(venueId),
         netCarryBps,
         capacityNotional: String(Math.trunc(capacity)),
-        authority: loaded.publicKey,
+        signingAs: role,
+        signer: loaded.publicKey,
+        bondAtRisk: role === "keeper",
       },
-      confirmQuestion: `Report ${venueName(venueId)} at ${formatBps(netCarryBps)} on ${input.globals.cluster}?`,
+      confirmQuestion:
+        role === "keeper"
+          ? `Report ${venueName(venueId)} at ${formatBps(netCarryBps)} on ${input.globals.cluster}, with your bond behind it?`
+          : `Report ${venueName(venueId)} at ${formatBps(netCarryBps)} on ${input.globals.cluster} as the authority?`,
       buildPlan: () => client.buildReportVenueState(params),
       simulate: (plan) => client.simulate(plan),
       send: () => client.reportVenueState({ ...params, signer: loaded.signer }),

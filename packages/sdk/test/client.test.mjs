@@ -26,6 +26,7 @@ import {
   TOKEN_PROGRAM_ID,
   buildApiUrl,
   deriveAssociatedTokenAddress,
+  deriveKeeperAddress,
   describeProgramError,
   extractProgramErrorCode,
   keypairSigner,
@@ -726,4 +727,66 @@ test("a venue id sent by the API is ignored; the slot comes from the program's c
   assert.equal(jupiter.venueId, 2, "jupiter-perps is slot 2 whatever the API said");
   assert.notEqual(velocity.venueId, 0, "slot 0 is the unset sentinel and can never name a venue");
   assert.notEqual(jupiter.venueId, 1, "the API's 1 must not be taken as velocity's slot");
+});
+
+test("report_venue_state selects its authorisation path explicitly", async () => {
+  const client = offlineClient();
+
+  const asAuthority = await client.buildReportVenueState({
+    reporter: USER,
+    as: "authority",
+    venueId: 1,
+    netCarryBps: -1750,
+    capacityNotional: 7_646_000_000n,
+  });
+  const authorityAccounts = asAuthority.instructions[0].accounts;
+  assert.deepEqual(
+    authorityAccounts.map((account) => account.name),
+    ["signer", "config", "keeper_account"],
+    "an absent optional account keeps its slot rather than shortening the list",
+  );
+  // Anchor marks the absent optional account with the program's own id.
+  assert.equal(authorityAccounts[2].pubkey, client.config.programId);
+  assert.equal(
+    asAuthority.warnings.some((warning) => warning.includes("stakes your bond")),
+    false,
+    "the authority path must not claim a bond is at stake",
+  );
+
+  const asKeeper = await client.buildReportVenueState({
+    reporter: KEEPER,
+    as: "keeper",
+    venueId: 1,
+    netCarryBps: -1750,
+    capacityNotional: 7_646_000_000n,
+  });
+  const keeperAccounts = asKeeper.instructions[0].accounts;
+  assert.equal(
+    keeperAccounts[2].pubkey,
+    deriveKeeperAddress(KEEPER),
+    "the keeper path attaches that signer's keeper PDA",
+  );
+  assert.notEqual(keeperAccounts[2].pubkey, client.config.programId);
+  assert.ok(
+    asKeeper.warnings.some((warning) => warning.includes("slashable")),
+    "the keeper path must say the bond is at risk",
+  );
+  assert.ok(asKeeper.warnings.some((warning) => warning.includes("must not go backwards")));
+
+  // Same arguments either way: only the account list distinguishes them.
+  assert.equal(asAuthority.instructions[0].dataHex, asKeeper.instructions[0].dataHex);
+});
+
+test("report_venue_state refuses the unset venue slot", async () => {
+  await assert.rejects(
+    () =>
+      offlineClient().buildReportVenueState({
+        reporter: USER,
+        as: "authority",
+        venueId: 0,
+        netCarryBps: 0,
+        capacityNotional: 1n,
+      }),
+    /venueId 0 is the unset value/,
+  );
 });

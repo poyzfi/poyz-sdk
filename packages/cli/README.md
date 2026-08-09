@@ -74,7 +74,7 @@ Node 20 or newer. The only runtime dependency is `@solana/web3.js`; the POYZ SDK
 | `poyz keeper bond` | Add to an existing keeper bond |
 | `poyz keeper unbond` | Withdraw from a keeper bond after the cooldown |
 | `poyz venue list` | Hedge venue slots, which are enabled, and how fresh the last reading is |
-| `poyz venue report` | Report a venue's net carry and capacity. Protocol authority only |
+| `poyz keeper report-venue` | Report a venue's net carry and capacity. Bonded keeper or protocol authority |
 | `poyz simulate` | Project funding over a horizon, including the negative regime |
 
 `poyz <command> --help` prints the flags and the caveats for one command.
@@ -133,12 +133,17 @@ need. It is a recurring feed, not a setting: **stop sending it and minting stops
 
 ```bash
 poyz venue list                                                  # slots, flags, and how stale the reading is
-poyz venue report --venue velocity --net-carry-bps -1750 \
-  --capacity 7646000000 --keypair ./keys/authority.json --execute
+poyz keeper report-venue --venue velocity --net-carry-bps -1750 \
+  --capacity 7646000000 --keypair ./keys/keeper.json --execute        # bond behind it
+poyz keeper report-venue --venue velocity --net-carry-bps -1750 \
+  --capacity 7646000000 --as authority --keypair ./keys/authority.json --execute
 ```
 
-`venue report` is signed by the **protocol authority**, not by a keeper, which is why it is not under
-`poyz keeper`. Net carry is signed: a venue that charges reports a negative number.
+The report is signed by an **active, bonded keeper** (the default) or by the **protocol authority**
+(`--as authority`). Signing as a keeper puts the bond behind the number, and a faulty report is
+slashable, which is why the command lives in the `keeper` family. Net carry is signed: a venue that
+charges reports a negative number. Reports must not go backwards in time -- the program rejects one
+older than the reading it already holds.
 
 Venue slots are 1-based. Slot 0 is the unset `u8` value and the program rejects it, so a `venue_id`
 that was never written cannot be mistaken for the primary venue. `velocity` is slot 1 and `drift`

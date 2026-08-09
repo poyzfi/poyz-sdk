@@ -169,7 +169,8 @@ function encodeConfig({
     .i64(0n) // negative_funding_since
     .i64(1_765_000_000n) // last_settle_at
     .i64(1_765_000_200n) // venue_state_at
-    .u64(5_000_000_000_000n); // venue_capacity_notional
+    .u64(5_000_000_000_000n) // venue_capacity_notional
+    .u64(9_000_000_000_000n); // max_reportable_capacity_notional
   writer
     .u32(60) // max_price_age_sec
     .u32(300) // request_ttl_sec
@@ -203,7 +204,7 @@ function encodeConfig({
     .u8(vaultFlags)
     .u8(1) // venue_flags
     .u8(0) // last_venue_id
-    .bytes(new Uint8Array(33));
+    .bytes(new Uint8Array(25));
   return writer.toUint8Array();
 }
 
@@ -226,6 +227,7 @@ test("decodeConfig reads the IDL field order", () => {
   assert.equal(config.lastNetCarryBps, -125);
   assert.equal(config.minNetCarryBps, -500);
   assert.equal(config.venueCapacityNotional, "5000000000000");
+  assert.equal(config.maxReportableCapacityNotional, "9000000000000");
   assert.equal(config.venueStateAtMs, 1_765_000_200_000);
   assert.equal(config.maxVenueStateAgeSec, 3_600);
   assert.equal(config.maxSupplyVsCapacityBps, 5_000);
