@@ -1,0 +1,121 @@
+name: POYZ delta monitor
+description: >-
+  Check the POYZ delta deviation against a threshold and fail the workflow when
+  the spot leg and the perp short have drifted outside the band.
+author: poyzfi
+branding:
+  icon: activity
+  color: green
+
+inputs:
+  cli-package:
+    description: >-
+      npm spec to install globally, for example a published version or a local
+      tarball path. Leave empty (the default) to build packages/cli from the
+      checked-out repository; poyz-cli is not published to npm yet, so an empty
+      value is the only default that actually runs.
+    required: false
+    default: ""
+  workspace:
+    description: Path to the checked-out POYZ repository root. Used when cli-package is empty.
+    required: false
+    default: ${{ github.workspace }}
+  max-deviation-bps:
+    description: Fail when the absolute delta deviation exceeds this many basis points.
+    required: false
+    default: "100"
+  api:
+    description: POYZ status API base URL. Empty uses the SDK default.
+    required: false
+    default: ""
+  cluster:
+    description: "Solana cluster: mainnet-beta, devnet or localnet."
+    required: false
+    default: mainnet-beta
+  source:
+    description: "Read path: api, chain or auto."
+    required: false
+    default: auto
+  program-id:
+    description: POYZ program address. Empty uses the address compiled into the SDK.
+    required: false
+    default: ""
+  fail-on-unavailable:
+    description: >-
+      Fail the workflow when the delta has not been published yet (CLI exit 3).
+      Off by default so a monitor does not page anyone for a metric that has
+      simply not been produced.
+    required: false
+    default: "false"
+
+outputs:
+  delta-bps:
+    description: Signed delta deviation in basis points, or empty when unavailable.
+    value: ${{ steps.check.outputs.delta-bps }}
+  within-threshold:
+    description: "true or false. Empty when the deviation was not published."
+    value: ${{ steps.check.outputs.within-threshold }}
+  available:
+    description: "true when the protocol published a delta, false otherwise."
+    value: ${{ steps.check.outputs.available }}
+  exit-code:
+    description: Raw CLI exit code (0 ok, 3 unavailable, 4 threshold exceeded).
+    value: ${{ steps.check.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install the POYZ CLI
+      shell: bash
+      env:
+        CLI_PACKAGE: ${{ inputs.cli-package }}
+        POYZ_WORKSPACE: ${{ inputs.workspace }}
+      run: |
+        set -euo pipefail
+        if [ -n "$CLI_PACKAGE" ]; then
+          npm install --global --no-audit --no-fund "$CLI_PACKAGE"
+          command -v poyz
+        else
+          if [ ! -f "$POYZ_WORKSPACE/packages/cli/package.json" ]; then
+            echo "poyz-cli action: no CLI at $POYZ_WORKSPACE/packages/cli." >&2
+            echo "Check out the POYZ repository first, or set cli-package to an npm spec." >&2
+            exit 1
+          fi
+          npm --prefix "$POYZ_WORKSPACE" install --no-audit --no-fund
+          npm --prefix "$POYZ_WORKSPACE" run build --workspace poyz-cli
+          mkdir -p "$RUNNER_TEMP/poyz-bin"
+          printf '#!/usr/bin/env bash\nexec node "%s" "$@"\n' \
+            "$POYZ_WORKSPACE/packages/cli/dist/poyz.mjs" > "$RUNNER_TEMP/poyz-bin/poyz"
+          chmod +x "$RUNNER_TEMP/poyz-bin/poyz"
+          echo "$RUNNER_TEMP/poyz-bin" >> "$GITHUB_PATH"
+        fi
+
+    - name: Check the delta band
+      id: check
+      shell: bash
+      env:
+        MAX_BPS: ${{ inputs.max-deviation-bps }}
+        API: ${{ inputs.api }}
+        CLUSTER: ${{ inputs.cluster }}
+        SOURCE: ${{ inputs.source }}
+        PROGRAM_ID: ${{ inputs.program-id }}
+        FAIL_ON_UNAVAILABLE: ${{ inputs.fail-on-unavailable }}
+      run: |
+        set -uo pipefail
+        poyz --version
+        args=(delta --json --no-color --max-deviation-bps "$MAX_BPS" --cluster "$CLUSTER" --source "$SOURCE")
+        if [ -n "$API" ]; then
+          args+=(--api "$API")
+        fi
+        if [ -n "$PROGRAM_ID" ]; then
+          args+=(--program "$PROGRAM_ID")
+        fi
+
+        report="$RUNNER_TEMP/poyz-delta.json"
+        set +e
+        poyz "${args[@]}" > "$report"
+        status=$?
+        set -e
+        cat "$report"
+
+        node "$GITHUB_ACTION_PATH/summarize.mjs" "$report" "$status" "$FAIL_ON_UNAVAILABLE"

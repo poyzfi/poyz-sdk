@@ -1,0 +1,112 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: npm install
+        # This repository is an npm workspace. @poyz/sdk depends on
+        # @poyz/risk-buffer and poyz-cli depends on @poyz/sdk; neither is on a
+        # registry yet, so the workspace link is what makes install resolve.
+        run: npm install --no-audit --no-fund
+      - name: build
+        # Build before typecheck. poyz-cli typechecks against @poyz/sdk's emitted
+        # declarations, so the SDK has to be built first or every cross-package
+        # import resolves to "cannot find module".
+        run: npm run build
+      - name: typecheck
+        run: npm run typecheck
+      - name: test
+        run: npm test
+
+  hygiene:
+    name: hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No credentials in the tree
+        run: |
+          set -uo pipefail
+          # This file is excluded because it spells the shapes out in order to find them.
+          pattern='ghp_[A-Za-z0-9]{20}|github_pat_[A-Za-z0-9_]{20}|sk-ant-[A-Za-z0-9-]{20}'
+          pattern="$pattern"'|vcp_[A-Za-z0-9]{20}|npm_[A-Za-z0-9]{20}|api-key=[A-Za-z0-9._-]{8}'
+          pattern="$pattern"'|BEGIN [A-Z ]*PRIVATE KEY'
+          pattern="$pattern"'|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+          hits=$(grep -rEn "$pattern" . --exclude-dir=.git --exclude-dir=node_modules --exclude=ci.yml || true)
+          if [ -n "$hits" ]; then echo "$hits"; exit 1; fi
+          echo "no credential-shaped strings"
+
+      - name: No signing keys in the tree
+        # Match key data, not the word "keypair". packages/cli/src/keypair.ts is
+        # key-handling source and belongs here. Names alone are not enough either,
+        # so small JSON files are read and rejected when they look like a Solana
+        # secret key array -- which catches a key renamed to something innocent.
+        run: |
+          set -euo pipefail
+          python3 - <<'PYKEY'
+          import json, os, re, sys
+          NAME = re.compile(r'(keypair.*\.(json|bin|key)$|-deploy\.json$|^id\.json$'
+                            r'|\.pem$|\.key$|^\.env$|^\.env\.(?!example)[^/]*$)')
+          def secret_key_array(path):
+              try:
+                  if os.path.getsize(path) > 8192:
+                      return False
+                  with open(path) as fh:
+                      data = json.load(fh)
+              except Exception:
+                  return False
+              return (isinstance(data, list) and len(data) >= 32
+                      and all(isinstance(x, int) and 0 <= x <= 255 for x in data))
+          hits = []
+          for dirpath, dirnames, filenames in os.walk("."):
+              dirnames[:] = [d for d in dirnames
+                             if d not in (".git", "node_modules", "target")]
+              for name in filenames:
+                  full = os.path.join(dirpath, name)
+                  if NAME.search(name):
+                      hits.append(f"{full}  (name)")
+                  elif name.endswith(".json") and secret_key_array(full):
+                      hits.append(f"{full}  (content looks like a secret key array)")
+          if hits:
+              print("\n".join(hits))
+              sys.exit(1)
+          print("no key material")
+          PYKEY
+
+      - name: No emoji
+        run: |
+          set -uo pipefail
+          hits=$(grep -rnP '[\x{1F000}-\x{1FAFF}\x{2600}-\x{27BF}\x{FE0F}\x{2705}\x{274C}\x{2714}\x{2716}\x{2B50}]' . \
+                   --exclude-dir=.git --exclude-dir=node_modules \
+                   --include='*.md' --include='*.ts' --include='*.mjs' \
+                   --include='*.yml' --include='*.sh' --include='*.json' || true)
+          if [ -n "$hits" ]; then echo "$hits"; exit 1; fi
+          echo "no emoji"
+
+  shell:
+    name: shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r f; do
+            bash -n "$f"
+            echo "ok  $f"
+            found=$((found + 1))
+          done < <(find . -name '*.sh' -not -path './.git/*' -not -path './node_modules/*')
+          [ "$found" -gt 0 ] || { echo "no shell scripts found"; exit 1; }

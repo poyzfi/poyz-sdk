@@ -1,0 +1,50 @@
+{
+  "name": "poyz-cli",
+  "version": "0.1.0",
+  "description": "Command line interface for the POYZ delta-neutral synthetic dollar on Solana.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/poyzfi/poyz-sdk.git"
+  },
+  "homepage": "https://poyz.fi",
+  "bugs": {
+    "url": "https://github.com/poyzfi/poyz-sdk/issues"
+  },
+  "type": "module",
+  "bin": {
+    "poyz": "./dist/poyz.mjs"
+  },
+  "files": [
+    "dist",
+    "action",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test test/*.test.mjs",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "solana",
+    "delta-neutral",
+    "synthetic-dollar",
+    "funding-yield",
+    "cli",
+    "poyz"
+  ],
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4"
+  },
+  "devDependencies": {
+    "@poyz/sdk": "^0.1.0",
+    "@types/node": "^22.18.0",
+    "esbuild": "^0.25.10",
+    "typescript": "^5.9.3"
+  }
+}

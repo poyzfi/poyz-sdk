@@ -1,0 +1,277 @@
+/**
+ * Layout guard.
+ *
+ * The decoders read account data positionally: field N is whatever sits at the
+ * offset every earlier field adds up to. That is fast and dependency-free, and
+ * it is also silent when it is wrong -- a field inserted into the middle of the
+ * program's struct shifts everything after it and produces numbers that look
+ * plausible.
+ *
+ * So `ACCOUNT_LAYOUTS` in accounts.ts declares, by hand, the field sequence each
+ * decoder assumes, and these tests compare that declaration with the IDL that
+ * shipped in the package. A program change that renames, reorders, inserts or
+ * retypes anything fails here with the field named, instead of downstream with a
+ * balance that is off by a factor of nothing obvious.
+ *
+ * If one of these fails: fix the decoder AND the declaration together, then the
+ * views that expose the field. Never fix only the declaration.
+ */
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import {
+  ACCOUNT_DISCRIMINATORS,
+  ACCOUNT_LAYOUTS,
+  INSTRUCTION_DISCRIMINATORS,
+  POYZ_IDL,
+  POYZ_IDL_ERRORS,
+  POYZ_PROGRAM_ID,
+} from "../dist/esm/index.js";
+
+/** Render an IDL type node the way ACCOUNT_LAYOUTS spells it. */
+function renderType(node) {
+  if (typeof node === "string") {
+    return node;
+  }
+  if (node?.array !== undefined) {
+    return `[${renderType(node.array[0])};${node.array[1]}]`;
+  }
+  if (node?.option !== undefined) {
+    return `option<${renderType(node.option)}>`;
+  }
+  if (node?.defined !== undefined) {
+    return node.defined.name;
+  }
+  if (node?.vec !== undefined) {
+    return `vec<${renderType(node.vec)}>`;
+  }
+  return JSON.stringify(node);
+}
+
+function idlStruct(name) {
+  const entry = POYZ_IDL.types.find((type) => type.name === name);
+  assert.ok(entry !== undefined, `the shipped IDL has no type called ${name}`);
+  assert.equal(entry.type.kind, "struct", `${name} is not a struct`);
+  return entry.type.fields.map((field) => [field.name, renderType(field.type)]);
+}
+
+test("the shipped IDL is the one the SDK advertises", () => {
+  assert.equal(POYZ_IDL.address, POYZ_PROGRAM_ID);
+  assert.ok(POYZ_IDL.instructions.length > 0);
+  assert.ok(POYZ_IDL.errors.length > 0);
+});
+
+for (const account of Object.keys(ACCOUNT_LAYOUTS)) {
+  test(`${account} decoder layout matches the IDL field by field`, () => {
+    const declared = ACCOUNT_LAYOUTS[account].map(([name, type]) => `${name}: ${type}`);
+    const actual = idlStruct(account).map(([name, type]) => `${name}: ${type}`);
+    assert.deepEqual(
+      declared,
+      actual,
+      `${account} layout drifted. The decoder in src/accounts.ts reads the fields on the left; ` +
+        "the program now defines the fields on the right.",
+    );
+  });
+}
+
+test("every account type in the IDL has a decoder layout", () => {
+  const idlAccounts = POYZ_IDL.accounts.map((account) => account.name).sort();
+  const covered = Object.keys(ACCOUNT_LAYOUTS).sort();
+  assert.deepEqual(
+    covered,
+    idlAccounts,
+    "the program defines an account type this SDK does not decode, or the other way round",
+  );
+});
+
+test("every decoded account has a discriminator in the IDL", () => {
+  for (const account of Object.keys(ACCOUNT_LAYOUTS)) {
+    assert.equal(ACCOUNT_DISCRIMINATORS[account]?.length, 8, `${account} discriminator`);
+  }
+});
+
+test("wrapped instruction arguments match the IDL", () => {
+  const expected = {
+    mint_request: ["nonce:u64", "collateral_amount:u64", "min_synthetic_out:u64"],
+    mint_confirm: ["nonce:u64", "hedge_proof_hash:[u8;32]", "venue_id:u8", "filled_notional:u64"],
+    mint_cancel: ["nonce:u64"],
+    redeem_request: ["nonce:u64", "synthetic_amount:u64", "min_collateral_out:u64"],
+    redeem_confirm: ["nonce:u64", "unwind_proof_hash:[u8;32]", "venue_id:u8", "unwound_notional:u64"],
+    redeem_cancel: ["nonce:u64"],
+    stake: ["amount:u64"],
+    request_unstake: ["amount:u64"],
+    unstake: [],
+    claim_funding: [],
+    keeper_register: ["bond_amount:u64"],
+    keeper_bond: ["amount:u64"],
+    keeper_unbond: ["amount:u64"],
+    commit_rebalance_proof: [
+      "sequence:u64",
+      "venues_hash:[u8;32]",
+      "venue_id:u8",
+      "delta_bps_before:i32",
+      "delta_bps_after:i32",
+      "hedged_notional:u64",
+      "collateral_notional:u64",
+    ],
+    buffer_deposit: ["amount:u64"],
+  };
+
+  for (const [name, args] of Object.entries(expected)) {
+    const entry = POYZ_IDL.instructions.find((instruction) => instruction.name === name);
+    assert.ok(entry !== undefined, `the shipped IDL has no instruction called ${name}`);
+    assert.deepEqual(
+      entry.args.map((arg) => `${arg.name}:${renderType(arg.type)}`),
+      args,
+      `${name} arguments drifted from what src/instructions.ts encodes`,
+    );
+    assert.equal(INSTRUCTION_DISCRIMINATORS[name]?.length, 8, `${name} discriminator`);
+  }
+});
+
+test("wrapped instruction account order matches the IDL", () => {
+  const expected = {
+    mint_request: [
+      "user",
+      "config",
+      "request",
+      "collateral_mint",
+      "user_collateral",
+      "collateral_vault",
+      "oracle",
+      "token_program",
+      "system_program",
+    ],
+    mint_cancel: [
+      "user",
+      "config",
+      "request",
+      "collateral_mint",
+      "collateral_vault",
+      "user_collateral",
+      "token_program",
+    ],
+    stake: [
+      "owner",
+      "config",
+      "position",
+      "synthetic_mint",
+      "owner_synthetic",
+      "stake_vault",
+      "token_program",
+      "system_program",
+    ],
+    unstake: [
+      "owner",
+      "config",
+      "position",
+      "synthetic_mint",
+      "stake_vault",
+      "owner_synthetic",
+      "token_program",
+    ],
+    claim_funding: [
+      "owner",
+      "config",
+      "position",
+      "synthetic_mint",
+      "funding_vault",
+      "owner_synthetic",
+      "token_program",
+    ],
+    keeper_register: [
+      "keeper",
+      "config",
+      "keeper_account",
+      "bond_mint",
+      "keeper_bond_source",
+      "bond_vault",
+      "token_program",
+      "system_program",
+    ],
+    commit_rebalance_proof: ["keeper", "config", "keeper_account", "proof", "oracle", "system_program"],
+    buffer_deposit: [
+      "depositor",
+      "config",
+      "synthetic_mint",
+      "depositor_synthetic",
+      "buffer_vault",
+      "token_program",
+    ],
+  };
+
+  for (const [name, accounts] of Object.entries(expected)) {
+    const entry = POYZ_IDL.instructions.find((instruction) => instruction.name === name);
+    assert.ok(entry !== undefined, `the shipped IDL has no instruction called ${name}`);
+    assert.deepEqual(
+      entry.accounts.map((account) => account.name),
+      accounts,
+      `${name} account order drifted from what src/instructions.ts builds`,
+    );
+  }
+});
+
+test("PDA seeds match the IDL, including the keyed ones", () => {
+  const expected = {
+    config: ['const:"config"'],
+    collateral_vault: ['const:"collateral_vault"', "account:collateral_mint"],
+    bond_vault: ['const:"bond_vault"'],
+    buffer_bond_vault: ['const:"buffer_bond_vault"'],
+    funding_vault: ['const:"funding_vault"'],
+    buffer_vault: ['const:"buffer_vault"'],
+    stake_vault: ['const:"stake_vault"'],
+    redeem_escrow: ['const:"redeem_escrow"'],
+    position: ['const:"stake"', "account:owner"],
+    proof: ['const:"proof"', "arg:sequence"],
+  };
+
+  const seen = new Map();
+  for (const instruction of POYZ_IDL.instructions) {
+    for (const account of instruction.accounts) {
+      if (account.pda === undefined) {
+        continue;
+      }
+      const seeds = account.pda.seeds.map((seed) => {
+        if (seed.kind === "const") {
+          return `const:"${Buffer.from(seed.value).toString("utf8")}"`;
+        }
+        return `${seed.kind}:${seed.path}`;
+      });
+      if (!seen.has(account.name)) {
+        seen.set(account.name, seeds);
+      }
+    }
+  }
+
+  for (const [name, seeds] of Object.entries(expected)) {
+    assert.deepEqual(seen.get(name), seeds, `${name} PDA seeds drifted from what src/pda.ts derives`);
+  }
+});
+
+test("error codes the SDK names by hand still resolve to those names", () => {
+  // These are the codes referenced in warnings, docs and tests. Anchor renumbers
+  // on insertion, so pin the ones that carry meaning in this package.
+  const pinned = {
+    MintPaused: "MintPaused",
+    RedeemPaused: "RedeemPaused",
+    VaultsNotReady: "VaultsNotReady",
+    InsufficientBond: "InsufficientBond",
+    UnbondCooldownActive: "UnbondCooldownActive",
+    BondBelowMinimum: "BondBelowMinimum",
+    ProofSequenceMismatch: "ProofSequenceMismatch",
+    ProofSlotNotMonotonic: "ProofSlotNotMonotonic",
+    DeltaThresholdExceeded: "DeltaThresholdExceeded",
+    RequestExpired: "RequestExpired",
+    RequestNotExpired: "RequestNotExpired",
+    UnstakeCooldownActive: "UnstakeCooldownActive",
+    NoPendingUnstake: "NoPendingUnstake",
+    BufferLocked: "BufferLocked",
+  };
+  const byName = new Map(POYZ_IDL_ERRORS.map((entry) => [entry.name, entry]));
+  for (const name of Object.keys(pinned)) {
+    const entry = byName.get(name);
+    assert.ok(entry !== undefined, `the program no longer defines the error ${name}`);
+    assert.ok(entry.msg.length > 0, `${name} has no message`);
+  }
+});

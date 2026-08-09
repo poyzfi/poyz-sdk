@@ -1,0 +1,43 @@
+{
+  "name": "@poyz/risk-buffer",
+  "version": "0.1.0",
+  "description": "Insurance buffer accounting and the negative funding playbook for the POYZ synthetic dollar.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "solana",
+    "delta-neutral",
+    "synthetic-dollar",
+    "insurance-buffer",
+    "negative-funding",
+    "poyz"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "vitest": "^3.2.7"
+  }
+}

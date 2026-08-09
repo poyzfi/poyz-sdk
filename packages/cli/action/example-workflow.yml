@@ -1,0 +1,87 @@
+# POYZ delta monitor -- copy this file into .github/workflows/ in your repository.
+#
+# It runs `poyz delta` every 30 minutes and fails the run when the spot leg and
+# the perp short have drifted outside the band. The failure is what pages you;
+# the job summary carries the numbers.
+#
+# Two jobs are shown because installation differs by where you run it:
+#
+#   in-repo   You are inside the POYZ repository. The action builds packages/cli
+#             from the checkout. Delete the second job.
+#   external  You are in your own repository. Check the POYZ repository out into
+#             a subdirectory and point the action at it. Delete the first job.
+#
+# Once poyz-cli is published to npm, the external job can drop the extra
+# checkout and pass `cli-package: poyz-cli@<version>` instead.
+
+name: POYZ delta monitor
+
+on:
+  schedule:
+    # Every 30 minutes. GitHub queues scheduled runs, so treat the cadence as
+    # "at least this often", not as a guarantee of punctuality.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      max-deviation-bps:
+        description: Fail above this many basis points of delta deviation
+        required: false
+        default: "100"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: poyz-delta-monitor
+  cancel-in-progress: true
+
+jobs:
+  in-repo:
+    name: Delta band (inside the POYZ repository)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - id: delta
+        uses: ./packages/cli/action
+        with:
+          max-deviation-bps: ${{ github.event.inputs.max-deviation-bps || '100' }}
+          cluster: mainnet-beta
+          source: auto
+
+      - name: Restate the reading
+        if: always()
+        env:
+          DELTA_BPS: ${{ steps.delta.outputs.delta-bps }}
+          WITHIN: ${{ steps.delta.outputs.within-threshold }}
+          AVAILABLE: ${{ steps.delta.outputs.available }}
+        run: |
+          echo "available=$AVAILABLE delta=${DELTA_BPS:-none} bps within-band=${WITHIN:-unknown}"
+
+  external:
+    name: Delta band (from another repository)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: poyzfi/poyz-sdk
+          path: poyz
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - id: delta
+        uses: ./poyz/packages/cli/action
+        with:
+          workspace: ${{ github.workspace }}/poyz
+          max-deviation-bps: ${{ github.event.inputs.max-deviation-bps || '100' }}
+          cluster: mainnet-beta
+          source: auto
+          # Set this once the delta has a published series and you want a silent
+          # upstream to page you as loudly as a breached band.
+          fail-on-unavailable: "false"
