@@ -162,7 +162,7 @@ always falls on the stricter side.
 
 ## Five-stage playbook (`risk-spec` 1.5)
 
-Stages trigger on the buffer's balance **as a fraction of `buffer_target_bps`**, not as a
+Stages trigger on the buffer's balance **as a fraction of `bufferTargetBps`**, not as a
 fraction of supply. A 1.5% buffer is healthy against a 1.7% target and badly drained
 against a 3% target.
 
